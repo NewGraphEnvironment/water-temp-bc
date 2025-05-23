@@ -47,3 +47,9 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Ignore everything in data/
+data/*
+# Except README.md
+!data/README.md
+README.html
