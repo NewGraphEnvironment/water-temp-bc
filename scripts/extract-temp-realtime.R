@@ -172,7 +172,7 @@ range(
 con <- DBI::dbConnect(duckdb::duckdb(), dbdir = "data/water-temp-bc.duckdb", read_only = FALSE)
 
 # write our amalgamated data to the database
-DBI::dbWriteTable(con, "realtime-raw", dat_amalgamated)
+DBI::dbWriteTable(con, "realtime_raw", dat_amalgamated)
 
 DBI::dbListTables(con)
 
@@ -185,11 +185,11 @@ DBI::dbExecute(con, paste0("SET s3_access_key_id='", Sys.getenv("AWS_ACCESS_KEY_
 
 
 #this will work
-DBI::dbExecute(con, "COPY (SELECT * FROM 'realtime-raw' LIMIT 10000000) TO 's3://water-temp-bc/test.parquet' (FORMAT PARQUET)")
+DBI::dbExecute(con, "COPY (SELECT * FROM realtime_raw LIMIT 10000000) TO 's3://water-temp-bc/test.parquet' (FORMAT PARQUET)")
 
 # this will fail
-DBI::dbExecute(con, "COPY 'realtime-raw' TO 's3://water-temp-bc/realtime-raw.parquet' (FORMAT PARQUET)")
+DBI::dbExecute(con, "COPY realtime_raw TO 's3://water-temp-bc/realtime_raw.parquet' (FORMAT PARQUET)")
 
 # so we will just burn locally
-DBI::dbExecute(con, "COPY 'realtime-raw' TO 'data/realtime-raw.parquet' (FORMAT PARQUET)")
+DBI::dbExecute(con, "COPY realtime_raw TO 'data/realtime_raw.parquet' (FORMAT PARQUET)")
 

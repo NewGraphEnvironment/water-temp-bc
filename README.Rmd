@@ -58,7 +58,7 @@ DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
 
 tab <- DBI::dbGetQuery(con, "
   SELECT *
-  FROM 's3://water-temp-bc/data/realtime-raw.parquet'
+  FROM 's3://water-temp-bc/data/realtime_raw.parquet'
   WHERE STATION_NUMBER IN ('07EA004')
     AND Code = 'TW' 
     LIMIT 10
