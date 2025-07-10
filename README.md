@@ -11,19 +11,10 @@ temperature data.
 
 <br>
 
-<img src="fig/cover.JPG" width="100%" style="display: block; margin: auto;" />
-
 <br>
 
 Please see <http://www.newgraphenvironment.com/water-temp-bc> for
 published table of collection links/details.
-
-``` r
-con <- DBI::dbConnect(duckdb::duckdb())
-DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
-```
-
-    ## [1] 0
 
 ``` r
 tab <- DBI::dbGetQuery(con, "
@@ -33,4 +24,17 @@ tab <- DBI::dbGetQuery(con, "
     AND Code = 'TW' 
     LIMIT 10
 ")
+```
+
+<br>
+
+Here we grab the information about the stations (including locations and
+date range available).
+
+``` r
+tab <- DBI::dbGetQuery(
+  con, 
+  "SELECT *
+  FROM 's3://water-temp-bc/data/stations_realtime.parquet'"
+)
 ```
