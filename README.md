@@ -6,17 +6,46 @@ water-temp-bc
 ![neeTo](https://img.shields.io/badge/status-neeTo-green)
 ![dEce](https://img.shields.io/badge/plays-dEce-red)
 
+<img src="fig/cover.JPG" width="100%" style="display: block; margin: auto;" />
+
 The goal of `water-temp-bc` is to document and serve out water
 temperature data. Setup and wrangle scripts are located here
-<https://github.com/NewGraphEnvironment/water-temp-bc> . Using
-[`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able to
-connect directly to a parquet file stored on a S3 bucket and query
+<https://github.com/NewGraphEnvironment/water-temp-bc> .
+
+<br>
+
+We scrape the Environment Canada web service for all realtime
+temperature data for the province and serve it out from parquet files on
+s3 storage.
+
+<br>
+
+Currently we have more than 1 file so we we will need to put them all
+together soon. TO DO. Here is a list of the files that we have currently
+with the date stamp corresponding to the latest date for water
+temperature data (there is also discharge and water level, air temp
+mixed in for some sites.)
+
+``` r
+fs::dir_ls("data", glob = "*.parquet")
+```
+
+    ## data/realtime_raw_20240119.parquet      data/realtime_raw_20250521.parquet      
+    ## data/realtime_raw_20250728.parquet      data/realtime_raw_eccc_20221213.parquet 
+    ## data/stations_realtime.parquet
+
+<br>
+
+Using [`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able
+to connect directly to the parquet files stored on a S3 bucket and query
 around to explore the provincial realtime data for the province of
 British Columbia.
 
 <br>
 
-<img src="fig/cover.JPG" width="100%" style="display: block; margin: auto;" />
+Currently the [data directory of this
+repo](https://github.com/NewGraphEnvironment/water-temp-bc/tree/main/data)
+is mirrored at s3://water-temp-bc/data.
 
 <br>
 
@@ -52,24 +81,33 @@ range <- DBI::dbGetQuery(con, "
     STATION_NUMBER,
     MIN(Date) AS min_date,
     MAX(Date) AS max_date
-  FROM 's3://water-temp-bc/data/realtime_raw.parquet'
-  WHERE Code = 'TW'
+  FROM 's3://water-temp-bc/data/realtime_raw_20250521.parquet'
+  WHERE Parameter = '5'
   GROUP BY STATION_NUMBER;
 ")
+
+# save local so need not run every time
+saveRDS(range, "data/result.rds")
 ```
+
+<br>
+
+Below we query for data from a particular site. Note that Parameter =
+‘5’ seems to be a better query than Code = “TW” since not all events are
+currently labelled with a Code…
+
+<br>
 
 ``` r
 tab <- DBI::dbGetQuery(con, "
   SELECT *
-  FROM 's3://water-temp-bc/data/realtime_raw.parquet'
+  FROM 's3://water-temp-bc/data/realtime_raw_20250521.parquet'
   WHERE STATION_NUMBER IN ('07EA004')
-    AND Code = 'TW' 
-    LIMIT 10
+    AND Parameter = '5' 
+    LIMIT 100
 ")
 ```
 
-<br>
-
-Below we query for data from a particular site.
-
-<br>
+``` r
+DBI::dbDisconnect(conn = con)
+```

@@ -6,6 +6,7 @@ output:
     self_contained: true
 params: 
   rmd_on: FALSE
+  update_query: FALSE
 ---
 
 ```{r setup, echo=FALSE, include = TRUE}
@@ -46,16 +47,39 @@ usethis::use_git_ignore("README.html")
 ![neeTo](https://img.shields.io/badge/status-neeTo-green)
 ![dEce](https://img.shields.io/badge/plays-dEce-red)
 
-The goal of `water-temp-bc` is to document and serve out water temperature data. Setup and wrangle scripts are located here https://github.com/NewGraphEnvironment/water-temp-bc .  Using [`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able to connect directly to a parquet file stored on a S3 bucket and query around to explore the provincial realtime data for the province of British Columbia.
-
-<br>
-
 
 ```{r fig, echo=FALSE, out.width="100%", fig.align="center", eval = TRUE}
 
 fpr::fpr_photo_resize_convert("fig/cover.png", path = "fig")
 knitr::include_graphics("fig/cover.JPG")
 ```
+
+
+The goal of `water-temp-bc` is to document and serve out water temperature data. Setup and wrangle scripts are located here https://github.com/NewGraphEnvironment/water-temp-bc .  
+
+<br>
+
+We scrape the Environment Canada web service for all realtime temperature data for the province and serve it out from parquet files on s3 storage.
+
+<br>
+
+Currently we have more than 1 file so we we will need to put them all together soon. TO DO.  Here is a list of the files that we have currently with the date stamp corresponding to the latest date for water temperature data (there is also discharge and water level, air temp mixed in for some sites.)
+
+```{r ls-files, eval = TRUE}
+
+fs::dir_ls("data", glob = "*.parquet")
+```
+
+
+<br>
+
+
+Using [`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able to connect directly to the parquet files stored on a S3 bucket and query around to explore the provincial realtime data for the province of British Columbia.
+
+<br>
+
+Currently the [data directory of this repo](https://github.com/NewGraphEnvironment/water-temp-bc/tree/main/data) is mirrored at s3://water-temp-bc/data.
+
 
 <br>
 
@@ -73,7 +97,7 @@ DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
 
 
 In the next chunks we perform a couple of queries and present the information about the data currently available.
-```{r stations-query}
+```{r q1}
 tab <- DBI::dbGetQuery(
   con, 
   "SELECT *
@@ -81,16 +105,19 @@ tab <- DBI::dbGetQuery(
 )
 ```
 
-```{r q1}
+```{r q2, eval=params$update_query}
 range <- DBI::dbGetQuery(con, "
   SELECT 
     STATION_NUMBER,
     MIN(Date) AS min_date,
     MAX(Date) AS max_date
-  FROM 's3://water-temp-bc/data/realtime_raw.parquet'
-  WHERE Code = 'TW'
+  FROM 's3://water-temp-bc/data/realtime_raw_20250521.parquet'
+  WHERE Parameter = '5'
   GROUP BY STATION_NUMBER;
 ")
+
+# save local so need not run every time
+saveRDS(range, "data/result.rds")
 ```
 
 ```{r stations-cap, echo=FALSE, results="asis", eval=identical(params$rmd_on, TRUE)}
@@ -102,6 +129,9 @@ my_tab_caption_rmd()
 
 
 ```{r tab-stations, echo=FALSE, eval=identical(params$rmd_on, TRUE)}
+
+range <- readRDS("data/result.rds")
+
 dplyr::left_join(
   tab,
   range,
@@ -110,24 +140,23 @@ dplyr::left_join(
   my_dt_table(cols_freeze_left = 2, escape = FALSE)
 ```
 
-```{r q2}
-tab <- DBI::dbGetQuery(con, "
-  SELECT *
-  FROM 's3://water-temp-bc/data/realtime_raw.parquet'
-  WHERE STATION_NUMBER IN ('07EA004')
-    AND Code = 'TW' 
-    LIMIT 10
-")
-```
-
-
-
 
 <br>
 
-Below we query for data from a particular site.
+Below we query for data from a particular site. Note that Parameter = '5' seems to be a better query than
+Code = "TW" since not all events are currently labelled with a Code...
 
 <br> 
+
+```{r q3}
+tab <- DBI::dbGetQuery(con, "
+  SELECT *
+  FROM 's3://water-temp-bc/data/realtime_raw_20250521.parquet'
+  WHERE STATION_NUMBER IN ('07EA004')
+    AND Parameter = '5' 
+    LIMIT 100
+")
+```
 
 
 ```{r tab-uav-imagery-cap, echo=FALSE, results="asis", eval=identical(params$rmd_on, TRUE)}
@@ -142,6 +171,9 @@ tab |>
   my_dt_table(cols_freeze_left = 2, escape = FALSE)
 ```
 
+```{r db-disconnect}
+DBI::dbDisconnect(conn = con)
+```
 
 
 
