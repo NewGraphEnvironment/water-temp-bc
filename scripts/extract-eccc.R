@@ -48,6 +48,28 @@ paths <- path_dir |>
 dat_realtime_raw <- purrr::map(paths, eccc_csv_extract) |>
   dplyr::bind_rows()
 
+# Get max(Date) where Code = 'TW'
+date_max <- max(
+  dat_realtime_raw |>
+  dplyr::filter(Parameter == 5) |>
+  dplyr::pull(Date)
+)
+
+# Format the date
+out_table <- paste0("realtime_raw_", format(date_max, "%Y%m%d"))
+out_file <- paste0("data/", "realtime_raw_eccc_", format(date_max, "%Y%m%d"), ".parquet")
+
+# burn the raw dataframe to parquet
+con <- DBI::dbConnect(duckdb::duckdb())
+# Register the data frame as a DuckDB table
+duckdb::duckdb_register(con, out_table, dat_realtime_raw)
+
+# we will just burn locally then sync
+DBI::dbExecute(
+  con,
+  glue::glue("COPY {DBI::SQL(out_table)} TO '{out_file}' (FORMAT PARQUET)")
+)
+
 #Amalgamate Results-----------------------------------------------------------------------------------------------------
 #load duckdb-----------------------------------------------------------------------------------------------------
 
@@ -207,4 +229,6 @@ DBI::dbDisconnect(con)
 # length((unique(rt$STATION_NUMBER)))
 # min(rt$Date)
 # max(rt$Date)
+
+
 
