@@ -8,7 +8,19 @@ readwritesqlite::rws_list_tables(conn)
 dat_existing <- readwritesqlite::rws_read_table("temp_realtime", conn = conn) |>
   ngr::ngr_tidy_cols_rm_na()
 
-con <- DBI::dbConnect(duckdb::duckdb())
-
 # so we will just burn locally
-DBI::dbExecute(con, "COPY realtime_raw TO 'data/realtime_raw_20240119.parquet' (FORMAT PARQUET)")
+date_max <- max(dat_existing$Date)
+out_table <- paste0("realtime_raw_", format(date_max, "%Y%m%d"))
+out_file <- paste0("data/", "realtime_raw_", format(date_max, "%Y%m%d"), ".parquet")
+
+
+con <- DBI::dbConnect(duckdb::duckdb())
+# Register the data frame as a DuckDB table
+duckdb::duckdb_register(con, out_table, dat_existing)
+
+# we will just burn locally then sync
+DBI::dbExecute(
+  con,
+  glue::glue("COPY {DBI::SQL(out_table)} TO '{out_file}' (FORMAT PARQUET)")
+)
+
