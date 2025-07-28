@@ -7,7 +7,7 @@ con <- DBI::dbConnect(duckdb::duckdb(), dbdir = "data/water-temp-bc.duckdb", rea
 date_max <- DBI::dbGetQuery(con, "
   SELECT MAX(Date) AS max_date
   FROM realtime_raw
-  WHERE Code = 'TW'
+  WHERE Parameter = '5'
 ")$max_date
 
 # Format the date
