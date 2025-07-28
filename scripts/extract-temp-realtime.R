@@ -5,11 +5,11 @@ library(duckdb)
 
 
 # see a list of parameters available
-param_id <- param_id
+param_id <- tidyhydat::param_id
 
 # get alist of stations with realtime data (according to tidyhydat)
 stations_tidyhydat <- tidyhydat::realtime_stations(prov_terr_state_loc = 'BC') |>
-  pull(STATION_NUMBER)
+  dplyr::pull(STATION_NUMBER)
 
 # stations forwarded from ECCC. See email.  Could be historic data only....
 stations_eccc <- readxl::read_excel("data/eccc/BC_Stations_withTW.xlsx") |>
