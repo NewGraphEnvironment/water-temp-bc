@@ -59,7 +59,8 @@ The goal of `water-temp-bc` is to document and serve out water temperature data.
 
 <br>
 
-We scrape the Environment Canada web service for all realtime temperature data for the province and serve it out from parquet files on s3 storage.
+We scrape the Environment Canada (ECCC) web service for all realtime temperature data for the province and serve it out from parquet files on s3 storage. We are however limited to around 18 months of data or so - so if we want current data we likely need to scrape
+on a schedule and add the data to what we have. That said - ECCC has provided us with a ton of historic data so in `scripts/extract-eccc.R` we wrangle that together into one parquet file and serve on the cloud (s3 storage).
 
 <br>
 
@@ -74,11 +75,16 @@ fs::dir_ls("data", glob = "*.parquet")
 <br>
 
 
-Using [`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able to connect directly to the parquet files stored on a S3 bucket and query around to explore the provincial realtime data for the province of British Columbia.
+Using [`duckdb`](https://github.com/duckdb/duckdb-r) for `R` we are able to connect directly to the parquet files stored on a S3 bucket and query around to explore the provincial realtime data for the province of British Columbia.  The beauty of [`duckdb`](https://github.com/duckdb/duckdb-r) and the `parquet` file format (provided we install the `httpfs` extension) is that we don't need a database.  We just create a connection to a "virtual database" with the line below and we can query the files directly in the s3 buckets.... Neeto.
+
+    con <- DBI::dbConnect(duckdb::duckdb())
+    DBI::dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
+
+
 
 <br>
 
-Currently the [data directory of this repo](https://github.com/NewGraphEnvironment/water-temp-bc/tree/main/data) is mirrored at s3://water-temp-bc/data.
+Currently the [data directory of this repo](https://github.com/NewGraphEnvironment/water-temp-bc/tree/main/data) is mirrored at s3://water-temp-bc/data so punch in any of the urls below into your browser and grab the files yourself.
 
 
 <br>
