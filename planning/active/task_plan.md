@@ -35,16 +35,16 @@ Goal: produce a single `snapshot_<yyyy-mm-dd>.parquet` capturing 18mo of API sta
 - [ ] ~Verify cross-prefix unified read~ **Deferred** — historic files have heterogeneous schemas (Parameter `string` vs `double`, Date naked vs `tz=UTC`, Grade `string` vs `double`, extra columns). `arrow::open_dataset(list(realtime, historic), unify_schemas = TRUE)` fails on Date tz mismatch. **Follow-up issue body saved at `/tmp/historic-normalize-issue.md` — file when ready.**
 - [x] **Scope decision:** canonical source going forward is `realtime/` only. `historic/` is preserved-as-is for explicit archival reads. `query_canonical()` (Phase 3) reads from `realtime/` exclusively.
 
-## Phase 3 — Read-side ergonomics
+## Phase 3 — Read-side ergonomics ✅
 
 Goal: make the canonical query path obvious so collaborators don't trip on read-time dedup.
 
-- [ ] `scripts/query.R` (new): top-to-bottom readable example covering open-dataset, canonical dedup pattern with comment explaining why, parameterized "param 5, last N months, these stations" example, and how to filter to historic-only or realtime-only.
-- [ ] `query_canonical()` helper in `scripts/utils.R`. Signature: `query_canonical(parameter = NULL, stations = NULL, from = NULL, to = NULL, dataset_root = "s3://water-temp-bc/data/")`. Returns a `dplyr` lazy query (caller decides when to `collect()`). Wraps the dedup so callers never touch `harvested_at`. Defer promotion to `ngr::ngr_temp_bc_query()` until signature settles.
-- [ ] Rewrite `README.Rmd` query chunks to use `arrow::open_dataset()` + `query_canonical()`. Closes #14.
-- [ ] Add short "How to query" section in `README.Rmd` linking to `scripts/query.R`.
-- [ ] Switch sample-link URLs to region-explicit `https://water-temp-bc.s3.us-west-2.amazonaws.com/...`. Closes #13.
-- [ ] Re-render `README.md` (github_document) and `index.html`; verify published page works.
+- [x] `scripts/query.R` (new): top-to-bottom readable example covering open-dataset, canonical dedup pattern, parameterized "param 5, last N months, these stations" example, daily-mean aggregation across stations, latest-reading-per-station, and reading a historic file directly with explicit casts.
+- [x] `query_canonical()` helper in new `scripts/query-helpers.R` (not `utils.R` — `utils.R` is a staticimports manifest; `functions.R` has pre-existing orphan top-level code I didn't want to depend on). Signature `query_canonical(parameter = NULL, stations = NULL, from = NULL, to = NULL, dataset_root = "s3://water-temp-bc/data/realtime/")`. Returns a lazy dplyr query (caller decides when to `collect()`). Uses `arrow::to_duckdb()` bridge per Phase 2 finding so the grouped `slice_max(harvested_at)` works. Verified anonymously usable (works without AWS env vars).
+- [x] Rewrite `README.Rmd` query chunks to use `arrow::open_dataset()` + `query_canonical()`. Closes #14.
+- [x] Add "Data layout" + "How to query" sections in `README.Rmd` linking to `scripts/query.R`.
+- [x] Switch sample-link URLs to region-explicit `https://water-temp-bc.s3.us-west-2.amazonaws.com/...`. Closes #13.
+- [x] Re-render `README.md` (github_document) and `index.html` (html_document). Both render clean. Refreshed `data/result.rds` against the new realtime/ ranges so the published table reflects current data.
 
 ## Phase 4 — Automate
 
