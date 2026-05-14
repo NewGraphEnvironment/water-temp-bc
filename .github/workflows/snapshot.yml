@@ -1,8 +1,8 @@
 name: Monthly realtime snapshot
 
 # Pull ~18 mo of BC realtime water-temp data from ECCC via tidyhydat /
-# ngr::ngr_hyd_realtime and write a partitioned parquet snapshot to
-# s3://water-temp-bc/data/realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>.parquet.
+# ngr::ngr_hyd_realtime and write a partitioned chunked parquet snapshot to
+# s3://water-temp-bc/data/realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet.
 #
 # Authenticates via OIDC against role_gha_water_temp_bc, provisioned by
 # NewGraphEnvironment/rtj#147. Trust is scoped to main branch only.
@@ -46,21 +46,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s globstar nullglob
-          files=(data/realtime/**/snapshot_*.parquet)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No snapshot file produced under data/realtime/" >&2
+          # snapshot.R writes data/realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/
+          # as a directory of chunk_NNN.parquet files. find -type d narrows to
+          # directories so a stray file under data/realtime/ can't fool us.
+          mapfile -t dirs < <(find data/realtime -mindepth 3 -maxdepth 3 -type d -name 'snapshot_*')
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "No snapshot directory produced under data/realtime/" >&2
             exit 1
           fi
-          if [ ${#files[@]} -gt 1 ]; then
-            echo "Multiple snapshot files found; expected exactly one:" >&2
-            printf '  %s\n' "${files[@]}" >&2
+          if [ ${#dirs[@]} -gt 1 ]; then
+            echo "Multiple snapshot directories found; expected exactly one:" >&2
+            printf '  %s\n' "${dirs[@]}" >&2
             exit 1
           fi
-          FILE="${files[0]}"
-          DEST="s3://water-temp-bc/${FILE}"
-          echo "Uploading ${FILE} -> ${DEST}"
-          aws s3 cp "$FILE" "$DEST"
+          DIR="${dirs[0]}"
+          DEST="s3://water-temp-bc/${DIR}/"
+          echo "Syncing ${DIR}/ -> ${DEST} (--delete removes any orphan chunks from a prior same-day run) ..."
+          aws s3 sync --delete "$DIR" "$DEST"
 
       - name: Session info
         if: always()
