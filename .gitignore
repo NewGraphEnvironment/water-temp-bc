@@ -52,4 +52,8 @@ rsconnect/
 data/*
 # Except README.md
 !data/README.md
+# Except the ECCC reference station list (small, static; used by scripts/snapshot.R)
+!data/eccc
+data/eccc/*
+!data/eccc/BC_Stations_withTW.xlsx
 README.html
