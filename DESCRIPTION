@@ -1,0 +1,23 @@
+Package: water.temp.bc
+Type: Project
+Title: Manifest for water-temp-bc dependency resolution
+Version: 0.0.0.9000
+Description: Not an R package. This DESCRIPTION exists so that
+    r-lib/actions/setup-r-dependencies can resolve runtime deps for the
+    monthly snapshot GitHub Actions workflow. See planning/active/task_plan.md.
+License: MIT
+Encoding: UTF-8
+Imports:
+    arrow,
+    DBI,
+    dplyr,
+    duckdb,
+    fs,
+    glue,
+    lubridate,
+    purrr,
+    readxl,
+    tidyhydat,
+    ngr
+Remotes:
+    NewGraphEnvironment/ngr

@@ -10,4 +10,5 @@
 - User approved phase breakdown.
 - Created branch `17-modernize-storage-monthly-oidc-snapshot` off main.
 - Scaffolded PWF baseline (`task_plan.md`, `findings.md`, `progress.md`).
-- **Next:** Phase 1 — write `DESCRIPTION` + `scripts/snapshot.R`; run locally; verify.
+- **Phase 1 done:** wrote `DESCRIPTION`, `scripts/snapshot.R`, carved `data/eccc/BC_Stations_withTW.xlsx` out of `.gitignore`. Local run produced `data/realtime/2026/05/snapshot_2026-05-14.parquet` (90.6M rows, 292 stations, max Date 2026-05-14 16:15, `harvested_at` 2026-05-14 09:07:17). Pull took ~40 min (faster than 87 min estimate — most ECCC-supplement stations fail-fast with no realtime data).
+- **Next:** Phase 2 — move legacy files to `s3://.../historic/`, sync new snapshot, verify unified `arrow::open_dataset()` read.

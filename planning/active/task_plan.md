@@ -8,19 +8,19 @@ Latest reading on the cloud right now is **2025-07-28 07:00** → gap of ~9.5 mo
 
 - [ ] Track `NewGraphEnvironment/rtj#147`. When merged + `terraform apply`-ed, capture the role ARN into Phase 4's workflow.
 
-## Phase 1 — Write side
+## Phase 1 — Write side ✅
 
 Goal: produce a single `snapshot_<yyyy-mm-dd>.parquet` capturing 18mo of API state with a `harvested_at` column, ready to ship to S3.
 
-- [ ] Add minimal `DESCRIPTION` listing `Imports:` for `r-lib/actions/setup-r-dependencies`: `tidyhydat`, `duckdb`, `DBI`, `arrow`, `dplyr`, `purrr`, `readxl`, `glue`, `fs`, `lubridate`, plus `Remotes: NewGraphEnvironment/ngr`. Repo is not a package — `DESCRIPTION` is dep-manifest only.
-- [ ] Write `scripts/snapshot.R`:
+- [x] Add minimal `DESCRIPTION` listing `Imports:` for `r-lib/actions/setup-r-dependencies`: `tidyhydat`, `duckdb`, `DBI`, `arrow`, `dplyr`, `purrr`, `readxl`, `glue`, `fs`, `lubridate`, plus `Remotes: NewGraphEnvironment/ngr`. Repo is not a package — `DESCRIPTION` is dep-manifest only.
+- [x] Write `scripts/snapshot.R`:
   - Stations: union of `tidyhydat::realtime_stations('BC')` + `data/eccc/BC_Stations_withTW.xlsx` (matches `update-temp-realtime.R:11–19`).
   - Pull via `purrr::map(stations, ngr::ngr_hyd_realtime) |> purrr::discard(is.null) |> dplyr::bind_rows() |> ngr::ngr_tidy_cols_rm_na()`.
   - Add `harvested_at = Sys.time()` column.
   - Partition path: `data/realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>.parquet`. `fs::dir_create` parents.
   - Write via `arrow::write_parquet()`.
   - Print summary at the end (rows, distinct stations, max Date).
-- [ ] Run locally; verify file lands at expected path; `arrow::read_parquet()` shows `harvested_at` populated and `max(Date)` ≈ today.
+- [x] Run locally; verify file lands at expected path; `arrow::read_parquet()` shows `harvested_at` populated and `max(Date)` ≈ today. **Verified 2026-05-14:** 90.6M rows total, 4.1M for Parameter=5 (water temp) across 292 stations, max Date `2026-05-14 16:15`. ECCC carve-out tracked `data/eccc/BC_Stations_withTW.xlsx`.
 
 ## Phase 2 — Migrate legacy layout to `historic/`
 
