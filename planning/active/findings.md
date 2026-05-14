@@ -76,3 +76,43 @@ Builds `stations_realtime.parquet` (metadata, not data). Stays as its own manual
 ## Cross-repo dependency
 
 - **`NewGraphEnvironment/rtj#147`** — proposes `modules/gha_s3_role/` Terraform module; first consumer is `water-temp-bc`. Blocks Phase 4 only. Phases 1–3 are local + S3-write-with-existing-keys and can proceed in parallel.
+
+## Phase 2 discoveries (2026-05-14)
+
+### Historic schema heterogeneity blocks unified `arrow::open_dataset`
+
+Each of the four pre-modernization parquets has a different schema. Concrete diffs vs. the canonical new-snapshot schema:
+
+| File | Notable diffs |
+| --- | --- |
+| `realtime_raw_eccc_20221213.parquet` | `Parameter: string`, `Value: string`; has `RangeNumber`/`Quality`/`Interpolation`/`Symbol`; missing `Unit`/`Grade`/`Qualifier`/`harvested_at` |
+| `realtime_raw_20240119.parquet` | `Grade: string` (canonical: double); `Date: timestamp[us]` (canonical: `tz=UTC`); missing `harvested_at` |
+| `realtime_raw_20250521.parquet` | Has `RangeNumber`/`Quality`/`Interpolation`/`Symbol`/`Qualifiers: bool`; `Grade: string` |
+| `realtime_raw_20250728.parquet` | Has `Symbol`/`Qualifiers: bool`; `Grade: double` |
+
+`arrow::open_dataset(list(realtime, historic), unify_schemas = TRUE)` fails on the `Date` tz mismatch first. Even if that were resolved, the `Grade` `string` vs `double` mismatch is a second blocker. Normalization is non-trivial → tracked as separate follow-up (body at `/tmp/historic-normalize-issue.md`; file when ready). For #17, the canonical source narrows to `realtime/` only.
+
+### arrow dplyr does not support grouped slice — use `arrow::to_duckdb()`
+
+The canonical dedup pattern `group_by(STATION_NUMBER, Parameter, Date) |> slice_max(harvested_at, n = 1)` fails in arrow's dplyr backend with `arrow_not_supported("Slicing grouped data")`. `slice_max(by = ...)` (ungrouped form, dplyr 1.1+) also fails through the arrow translator.
+
+Working pattern is to bridge the arrow lazy query into duckdb before the slice:
+
+```r
+arrow::open_dataset("s3://water-temp-bc/data/realtime/") |>
+  dplyr::filter(Parameter == 5) |>
+  arrow::to_duckdb() |>
+  dplyr::group_by(STATION_NUMBER, Parameter, Date) |>
+  dplyr::slice_max(harvested_at, n = 1, with_ties = FALSE) |>
+  dplyr::ungroup()
+```
+
+DuckDB has full window-function support; `to_duckdb()` keeps the dplyr surface that R users like. The `query_canonical()` helper in Phase 3 will use this bridge by default.
+
+### Local aws CLI is broken
+
+`brew`-installed aws CLI on this machine errors on launch with `Symbol not found: _XML_SetAllocTrackerActivationThreshold` — Python 3.14 upgraded under it and the pyexpat C extension can no longer link. Workaround for Phase 2 was `s3fs` from R. Out-of-band: `brew reinstall awscli` (or equivalent) should restore it.
+
+### Incidental: `s3://water-temp-bc/data/water-temp-bc.duckdb`
+
+The local duckdb scratch file got synced up at some past point. Not in scope for #17; flag for cleanup.

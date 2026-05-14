@@ -22,17 +22,18 @@ Goal: produce a single `snapshot_<yyyy-mm-dd>.parquet` capturing 18mo of API sta
   - Print summary at the end (rows, distinct stations, max Date).
 - [x] Run locally; verify file lands at expected path; `arrow::read_parquet()` shows `harvested_at` populated and `max(Date)` ≈ today. **Verified 2026-05-14:** 90.6M rows total, 4.1M for Parameter=5 (water temp) across 292 stations, max Date `2026-05-14 16:15`. ECCC carve-out tracked `data/eccc/BC_Stations_withTW.xlsx`.
 
-## Phase 2 — Migrate legacy layout to `historic/`
+## Phase 2 — Migrate legacy layout to `historic/` ✅ (scope narrowed)
 
-- [ ] `aws s3 mv` the legacy files (bucket versioning is on per #9, recoverable):
+- [x] Move the legacy files to `s3://water-temp-bc/data/historic/` via `s3fs::s3_file_move` (aws CLI on this machine is broken — Python 3.14 dyld error; out-of-band fix). Bucket versioning is on per #9.
   - `realtime_raw_eccc_20221213.parquet`
   - `realtime_raw_20240119.parquet`
   - `realtime_raw_20250521.parquet`
   - `realtime_raw_20250728.parquet`
-  → `s3://water-temp-bc/data/historic/`
-- [ ] Sync the Phase 1 snapshot up to `s3://water-temp-bc/data/realtime/<yyyy>/<mm>/`.
-- [ ] Verify with `arrow::open_dataset(c("s3://water-temp-bc/data/realtime/", "s3://water-temp-bc/data/historic/"))` that both prefixes load as a unified dataset.
-- [ ] **Schema gotcha test**: historic files lack `harvested_at`. Confirm `slice_max(harvested_at, ..., with_ties = FALSE)` treats NULL as oldest so newer snapshot rows always win on collisions.
+- [x] Upload Phase 1 snapshot to `s3://water-temp-bc/data/realtime/2026/05/snapshot_2026-05-14.parquet` (32s, 690 MB).
+- [x] Verify realtime/ dedup works. `Parameter == 5` slice returns 4,112,372 rows, 292 stations, max Date `2026-05-14 16:15`. Took 31.8s over the network.
+- [x] **Architectural finding (key):** `dplyr::slice_max` on grouped data is not supported by arrow's dplyr backend (`arrow_not_supported`). The canonical dedup pattern must go through `arrow::to_duckdb()` for window-function support. Load-bearing for Phase 3's `query_canonical()`.
+- [ ] ~Verify cross-prefix unified read~ **Deferred** — historic files have heterogeneous schemas (Parameter `string` vs `double`, Date naked vs `tz=UTC`, Grade `string` vs `double`, extra columns). `arrow::open_dataset(list(realtime, historic), unify_schemas = TRUE)` fails on Date tz mismatch. **Follow-up issue body saved at `/tmp/historic-normalize-issue.md` — file when ready.**
+- [x] **Scope decision:** canonical source going forward is `realtime/` only. `historic/` is preserved-as-is for explicit archival reads. `query_canonical()` (Phase 3) reads from `realtime/` exclusively.
 
 ## Phase 3 — Read-side ergonomics
 
