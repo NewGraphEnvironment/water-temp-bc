@@ -20,4 +20,4 @@ Imports:
     tidyhydat,
     ngr
 Remotes:
-    NewGraphEnvironment/ngr
+    NewGraphEnvironment/ngr@1e5758fee8992b1e7421db01166ba7f4e1d7f5d2

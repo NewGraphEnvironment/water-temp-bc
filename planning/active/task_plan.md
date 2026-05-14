@@ -48,13 +48,13 @@ Goal: make the canonical query path obvious so collaborators don't trip on read-
 
 ## Phase 4 — Automate
 
-- [ ] `.github/workflows/snapshot.yml`:
+- [x] Pin `ngr` ref in `DESCRIPTION` to `NewGraphEnvironment/ngr@1e5758fee8992b1e7421db01166ba7f4e1d7f5d2` (current main as of 2026-04-05) so the runner is reproducible.
+- [x] `.github/workflows/snapshot.yml`:
   - Triggers: `schedule: cron: '0 12 1 * *'` (1st of month, 12:00 UTC) + `workflow_dispatch`.
   - `permissions: { id-token: write, contents: read }`.
-  - Steps: `actions/checkout`, `r-lib/actions/setup-r`, `r-lib/actions/setup-r-dependencies` (reads `DESCRIPTION`), `aws-actions/configure-aws-credentials` against rtj role ARN with `aws-region: us-west-2`, `Rscript scripts/snapshot.R`, `aws s3 cp` to the right partition.
-- [ ] Pin `ngr` ref in `DESCRIPTION` (`Remotes: NewGraphEnvironment/ngr@<sha>`).
-- [ ] Manual `workflow_dispatch` end-to-end run. Verify file lands at expected partition and `query_canonical()` returns it.
-- [ ] Let cron take over.
+  - Steps: `actions/checkout@v4`, `r-lib/actions/setup-r@v2` (public-rspm), `r-lib/actions/setup-r-dependencies@v2` (reads `DESCRIPTION`), `aws-actions/configure-aws-credentials@v4` against `arn:aws:iam::414155577829:role/role_gha_water_temp_bc`, `Rscript scripts/snapshot.R`, then `find data/realtime -name 'snapshot_*.parquet' | head -1 | aws s3 cp` to S3.
+  - 150-minute job timeout (local serial pull was ~40 min; headroom for slower ECCC days).
+- [ ] **Pending merge to main** — OIDC trust is scoped to `main` only, so `workflow_dispatch` from this feature branch will fail at the AWS auth step. After PR merge: trigger one manual run from main to verify end-to-end, then let cron take over.
 
 ## Phase 5 — Close out
 
