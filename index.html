@@ -3401,12 +3401,17 @@ dataset on S3.</p>
 <div id="data-layout" class="section level2">
 <h2>Data layout</h2>
 <pre><code>s3://water-temp-bc/data/
-├── realtime/&lt;yyyy&gt;/&lt;mm&gt;/snapshot_&lt;yyyy-mm-dd&gt;.parquet  # canonical, append-only
-├── historic/realtime_raw_*.parquet                      # frozen pre-modernization
-└── stations_realtime.parquet                            # station metadata</code></pre>
+├── realtime/&lt;yyyy&gt;/&lt;mm&gt;/snapshot_&lt;yyyy-mm-dd&gt;/chunk_NNN.parquet  # canonical, append-only
+├── historic/realtime_raw_*.parquet                                # frozen pre-modernization
+└── stations_realtime.parquet                                      # station metadata</code></pre>
+<p>Each snapshot is a <em>directory</em> of chunked parquet files, not a
+single file — the monthly pull is chunked to keep memory bounded on the
+GitHub Actions runner. Readers never need to care:
+<code>arrow::open_dataset()</code> walks the whole tree and
+<code>query_canonical()</code> handles it for you.</p>
 <p>The bucket lives in <code>us-west-2</code>. To pull a raw file in a
 browser, the URL needs the explicit region:</p>
-<pre><code>https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/05/snapshot_2026-05-14.parquet</code></pre>
+<pre><code>https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet</code></pre>
 <p>Each monthly snapshot pulls the full ~18-month realtime window (the
 most ECCC serves) and tags every row with a <code>harvested_at</code>
 timestamp. Consecutive snapshots overlap by design, and the canonical
@@ -3436,9 +3441,33 @@ partitioned <code>realtime/</code> tree on S3, automatically deduped on
 <code>(STATION_NUMBER, Parameter, Date)</code> by taking the row with
 the latest <code>harvested_at</code>. Chain more dplyr verbs and call
 <code>dplyr::collect()</code> when you want the data in memory.</p>
-<p>Common parameter codes: <code>5</code> = water temperature,
-<code>6</code> = discharge (daily mean), <code>46</code> = water
-level.</p>
+<p><br></p>
+<h2>Parameters</h2>
+<p>Each snapshot carries <em>every</em> parameter ECCC serves for a
+station. Despite the repo name, water temperature is a small slice of the
+archive — water level and discharge dominate. This is the complete set
+(counts from the 2026-06-01 snapshot: 291 stations, ~19-month window):</p>
+<table>
+<thead>
+<tr class="header">
+<th><code>Parameter</code></th>
+<th>Name</th>
+<th>Unit</th>
+<th align="right">Rows</th>
+<th align="right">Stations</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd"><td><code>5</code></td><td>Water temperature</td><td>°C</td><td align="right">4,108,352</td><td align="right">291</td></tr>
+<tr class="even"><td><code>6</code></td><td>Discharge (daily mean)</td><td>m³/s</td><td align="right">142,618</td><td align="right">252</td></tr>
+<tr class="odd"><td><code>46</code></td><td>Water level (primary sensor)</td><td>m</td><td align="right">45,507,879</td><td align="right">288</td></tr>
+<tr class="even"><td><code>47</code></td><td>Discharge (primary sensor derived)</td><td>m³/s</td><td align="right">40,716,328</td><td align="right">255</td></tr>
+</tbody>
+</table>
+<p><code>6</code> is a daily-mean series — one value per day.
+<code>5</code>, <code>46</code> and <code>47</code> are high-frequency
+sensor readings. <strong>For realtime discharge use <code>47</code>, not
+<code>6</code>.</strong></p>
 <p><br></p>
 <pre class="r"><code># Station metadata (location, drainage, timezone, etc.) — unchanged file path,
 # managed separately from the realtime snapshots.
