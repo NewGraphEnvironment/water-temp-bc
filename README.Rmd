@@ -62,16 +62,21 @@ result as a partitioned parquet dataset on S3.
 
 ```
 s3://water-temp-bc/data/
-├── realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>.parquet  # canonical, append-only
-├── historic/realtime_raw_*.parquet                      # frozen pre-modernization
-└── stations_realtime.parquet                            # station metadata
+├── realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet  # canonical, append-only
+├── historic/realtime_raw_*.parquet                                # frozen pre-modernization
+└── stations_realtime.parquet                                      # station metadata
 ```
+
+Each snapshot is a *directory* of chunked parquet files, not a single file —
+the monthly pull is chunked to keep memory bounded on the GitHub Actions
+runner. Readers never need to care: `arrow::open_dataset()` walks the whole
+tree and `query_canonical()` handles it for you.
 
 The bucket lives in `us-west-2`. To pull a raw file in a browser, the URL
 needs the explicit region:
 
 ```
-https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/05/snapshot_2026-05-14.parquet
+https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet
 ```
 
 Each monthly snapshot pulls the full ~18-month realtime window (the most
@@ -108,8 +113,24 @@ query_canonical(parameter = 5, stations = "07EA004", from = Sys.Date()-180) |>
 Date)` by taking the row with the latest `harvested_at`. Chain more dplyr
 verbs and call `dplyr::collect()` when you want the data in memory.
 
-Common parameter codes: `5` = water temperature, `6` = discharge (daily
-mean), `46` = water level.
+<br>
+
+## Parameters
+
+Each snapshot carries *every* parameter ECCC serves for a station. Despite the
+repo name, water temperature is a small slice of the archive — water level and
+discharge dominate. This is the complete set (counts from the 2026-06-01
+snapshot: 291 stations, ~19-month window):
+
+| `Parameter` | Name | Unit | Rows | Stations |
+|---|---|---|---|---|
+| `5` | Water temperature | °C | 4,108,352 | 291 |
+| `6` | Discharge (daily mean) | m³/s | 142,618 | 252 |
+| `46` | Water level (primary sensor) | m | 45,507,879 | 288 |
+| `47` | Discharge (primary sensor derived) | m³/s | 40,716,328 | 255 |
+
+`6` is a daily-mean series — one value per day. `5`, `46` and `47` are
+high-frequency sensor readings. **For realtime discharge use `47`, not `6`.**
 
 <br>
 
