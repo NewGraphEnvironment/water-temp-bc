@@ -12,6 +12,11 @@ on:
     # 1st of the month, 12:00 UTC. GitHub may delay scheduled runs under load.
     - cron: '0 12 1 * *'
   workflow_dispatch:
+    inputs:
+      compact_only:
+        description: 'Skip the ECCC pull and only (re)build the canonical store — bootstrap/repair runs'
+        type: boolean
+        default: false
 
 permissions:
   id-token: write   # OIDC token for AWS
@@ -20,8 +25,9 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    # Local serial pull is ~40-90 min depending on ECCC responsiveness.
-    timeout-minutes: 150
+    # Local serial pull is ~40-90 min depending on ECCC responsiveness, plus
+    # ~10-20 min for the canonical compaction at 5-year scale.
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -40,9 +46,11 @@ jobs:
           aws-region: us-west-2
 
       - name: Pull snapshot
+        if: ${{ inputs.compact_only != true }}
         run: Rscript scripts/snapshot.R
 
       - name: Upload to S3
+        if: ${{ inputs.compact_only != true }}
         shell: bash
         run: |
           set -euo pipefail
@@ -63,6 +71,14 @@ jobs:
           DEST="s3://water-temp-bc/${DIR}/"
           echo "Syncing ${DIR}/ -> ${DEST} (--delete removes any orphan chunks from a prior same-day run) ..."
           aws s3 sync --delete "$DIR" "$DEST"
+
+      # Merges the just-uploaded snapshot (plus any earlier unmerged ones —
+      # the watermark in data/canonical_meta.json self-heals failed months)
+      # into the deduplicated Parameter-partitioned store at data/canonical/.
+      # Readers see a brief per-partition rewrite window here; documented in
+      # the README.
+      - name: Compact canonical store
+        run: Rscript scripts/compact.R
 
       - name: Session info
         if: always()

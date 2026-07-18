@@ -17,8 +17,8 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Phase 3: Workflow integration
 
-- [ ] `snapshot.yml`: compact + canonical-upload steps after raw upload; per-partition narrowly-scoped `aws s3 sync --delete`; timeout 150→180
-- [ ] `workflow_dispatch` input `compact_only` to skip the pull (repair/bootstrap runs)
+- [x] `snapshot.yml`: "Compact canonical store" step after raw upload (per-partition scoped sync lives inside compact.R); timeout 150→180
+- [x] `workflow_dispatch` input `compact_only` (boolean) gates Pull + Upload steps off for repair/bootstrap runs; schedule runs unaffected (`inputs.compact_only != true` is true when inputs is empty)
 
 ## Phase 4: Bootstrap + verify
 
