@@ -62,15 +62,27 @@ result as a partitioned parquet dataset on S3.
 
 ```
 s3://water-temp-bc/data/
-├── realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet  # canonical, append-only
+├── canonical/Parameter=<n>/part-*.parquet                         # THE dataset to query
+├── canonical_meta.json                                            # compaction watermark
+├── realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet   # raw monthly pulls (provenance)
 ├── historic/realtime_raw_*.parquet                                # frozen pre-modernization
 └── stations_realtime.parquet                                      # station metadata
 ```
 
-Each snapshot is a *directory* of chunked parquet files, not a single file —
-the monthly pull is chunked to keep memory bounded on the GitHub Actions
-runner. Readers never need to care: `arrow::open_dataset()` walks the whole
-tree and `query_canonical()` handles it for you.
+**`canonical/` is the dataset to query.** Each monthly pull grabs the full
+~18-month realtime window ECCC serves and tags every row with a
+`harvested_at` timestamp; a compaction step then merges it into `canonical/`,
+keeping the most recent `harvested_at` per `(STATION_NUMBER, Parameter,
+Date)` — that's how QC corrections from ECCC replace earlier provisional
+readings. The store is hive-partitioned by `Parameter`, so a
+single-parameter query reads only its own slice, and rows are ordered by
+`(STATION_NUMBER, Date)` so station/date filters skip most row groups.
+
+The raw overlapping pulls stay under `realtime/` for provenance — ~2/3 of
+their rows are duplicates by design, so query them only if you need
+pre-correction history. `historic/` preserves the pre-modernization parquets
+as-is; their schemas are heterogeneous, so read them one file at a time with
+awareness of their shape.
 
 The bucket lives in `us-west-2`. To pull a raw file in a browser, the URL
 needs the explicit region:
@@ -79,18 +91,13 @@ needs the explicit region:
 https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet
 ```
 
-Each monthly snapshot pulls the full ~18-month realtime window (the most
-ECCC serves) and tags every row with a `harvested_at` timestamp. Consecutive
-snapshots overlap by design, and the canonical value at each `(STATION_NUMBER,
-Parameter, Date)` is the row with the most recent `harvested_at` — that's
-how QC corrections from ECCC win over earlier provisional readings. The
-dedup is handled at read time by `query_canonical()` so callers don't have
-to think about it.
-
-The `historic/` prefix preserves the pre-modernization parquets as-is for
-explicit archival reads. Their schemas are heterogeneous (different column
-types, different column sets) — read them one at a time with awareness of
-their shape.
+Two operational notes: individual files under `canonical/` do **not**
+contain a `Parameter` column — per hive convention it lives in the directory
+name, and `arrow::open_dataset()` / `query_canonical()` reconstruct it (a
+single file fetched by URL won't have it). And `canonical/` is rewritten in
+place by the monthly run (~12:00–14:00 UTC on the 1st); a query during that
+brief window can see a partition mid-flip. Bucket versioning makes every
+rewrite recoverable.
 
 <br>
 
@@ -108,26 +115,27 @@ query_canonical(parameter = 5, stations = "07EA004", from = Sys.Date()-180) |>
   dplyr::collect()
 ```
 
-`query_canonical()` returns a lazy dplyr query against the partitioned
-`realtime/` tree on S3, automatically deduped on `(STATION_NUMBER, Parameter,
-Date)` by taking the row with the latest `harvested_at`. Chain more dplyr
-verbs and call `dplyr::collect()` when you want the data in memory.
+`query_canonical()` returns a lazy dplyr query against the `canonical/`
+store on S3. The store is already deduplicated at build time, so there is no
+read-time dedup cost — a `parameter` filter prunes whole partitions and
+station/date filters skip row groups. Chain more dplyr verbs and call
+`dplyr::collect()` when you want the data in memory.
 
 <br>
 
 ## Parameters
 
-Each snapshot carries *every* parameter ECCC serves for a station. Despite the
-repo name, water temperature is a small slice of the archive — water level and
-discharge dominate. This is the complete set (counts from the 2026-06-01
-snapshot: 291 stations, ~19-month window):
+The archive carries *every* parameter ECCC serves for a station. Despite the
+repo name, water temperature is a small slice — water level and discharge
+dominate. This is the complete set (canonical-store counts, 2026-07-18; the
+partition column reads back as an integer):
 
 | `Parameter` | Name | Unit | Rows | Stations |
 |---|---|---|---|---|
-| `5` | Water temperature | °C | 4,108,352 | 291 |
-| `6` | Discharge (daily mean) | m³/s | 142,618 | 252 |
-| `46` | Water level (primary sensor) | m | 45,507,879 | 288 |
-| `47` | Discharge (primary sensor derived) | m³/s | 40,716,328 | 255 |
+| `5` | Water temperature | °C | 4,474,827 | 291 |
+| `6` | Discharge (daily mean) | m³/s | 155,261 | 252 |
+| `46` | Water level (primary sensor) | m | 49,697,562 | 288 |
+| `47` | Discharge (primary sensor derived) | m³/s | 44,398,842 | 255 |
 
 `6` is a daily-mean series — one value per day. `5`, `46` and `47` are
 high-frequency sensor readings. **For realtime discharge use `47`, not `6`.**
@@ -143,8 +151,8 @@ stations <- arrow::read_parquet("s3://water-temp-bc/data/stations_realtime.parqu
 ```
 
 ```{r q-range, eval = params$update_query}
-# Per-station date ranges in the canonical realtime/ dataset. Slow over the
-# network so we cache the result locally and only refresh on demand.
+# Per-station date ranges in the canonical dataset. Cached locally; refresh
+# on demand with params$update_query (seconds against canonical/).
 range <- query_canonical(parameter = 5) |>
   dplyr::group_by(STATION_NUMBER) |>
   dplyr::summarise(

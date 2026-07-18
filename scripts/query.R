@@ -5,23 +5,32 @@
 #
 # Dataset layout on S3 (region us-west-2):
 #
+#   s3://water-temp-bc/data/canonical/Parameter=<n>/part-*.parquet
+#     -- THE dataset to query: deduplicated at build time (latest
+#        harvested_at wins per STATION_NUMBER + Parameter + Date, so ECCC QC
+#        corrections replace provisional values), hive-partitioned by
+#        Parameter so single-parameter queries read only their slice.
+#        Rebuilt monthly by scripts/compact.R (#23); watermark in
+#        data/canonical_meta.json. Note: per hive convention the Parameter
+#        column lives in the directory name (int), not inside the files —
+#        query_canonical()/open_dataset() reconstruct it; a single file
+#        fetched by URL won't have it.
+#
 #   s3://water-temp-bc/data/realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet
-#     -- canonical going-forward source; appended monthly by
-#        .github/workflows/snapshot.yml (Phase 4 of #17). Each snapshot is a
-#        DIRECTORY of chunked parquet files, not a single file — the pull is
-#        chunked to keep memory bounded on the runner. Readers don't care:
-#        arrow::open_dataset() walks the whole tree.
+#     -- raw overlapping monthly pulls, kept for provenance. Consecutive
+#        snapshots re-pull the same ~18-month window, so ~2/3 of rows are
+#        duplicates — query these only if you need pre-correction history.
 #
 #   s3://water-temp-bc/data/historic/realtime_raw_*.parquet
 #     -- frozen pre-modernization archive. Heterogeneous schemas — read
 #        individual files only, with awareness of their columns/types. See
 #        the open follow-up issue for normalization plans.
 #
-# Parameters — the complete set (counts from the 2026-06-01 snapshot):
-#   5  = Water temperature                  (°C,   4,108,352 rows, 291 stations)
-#   6  = Discharge (daily mean)             (m3/s,   142,618 rows, 252 stations)
-#   46 = Water level (primary sensor)       (m,   45,507,879 rows, 288 stations)
-#   47 = Discharge (primary sensor derived) (m3/s, 40,716,328 rows, 255 stations)
+# Parameters — the complete set (canonical-store counts, 2026-07-18):
+#   5  = Water temperature                  (°C,   4,474,827 rows, 291+ stations)
+#   6  = Discharge (daily mean)             (m3/s,   155,261 rows, 252+ stations)
+#   46 = Water level (primary sensor)       (m,   49,697,562 rows, 288+ stations)
+#   47 = Discharge (primary sensor derived) (m3/s, 44,398,842 rows, 255+ stations)
 #
 # 6 is a daily-mean series (one value per day); 5, 46 and 47 are high-frequency
 # sensor readings. For REALTIME DISCHARGE use 47, not 6.
@@ -37,8 +46,8 @@ source("scripts/query-helpers.R")  # defines query_canonical()
 # Example 1 — Water temperature for one station, last 6 months
 # ----------------------------------------------------------------------------
 # query_canonical() returns a lazy query so you can chain dplyr verbs before
-# calling collect(). It already applies the (STATION_NUMBER, Parameter, Date)
-# dedup against the most recent harvested_at, so you don't have to.
+# calling collect(). The store is already deduplicated at build time, so
+# there is no read-time dedup cost — filters prune partitions and row groups.
 
 tw_single <- query_canonical(
   parameter = 5,

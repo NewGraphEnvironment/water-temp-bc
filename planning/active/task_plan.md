@@ -28,10 +28,10 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Phase 5: Readers + docs
 
-- [ ] `query-helpers.R`: default root → `data/canonical/`, drop slice_max dedup, keep `to_duckdb()` bridge; S3FileSystem with connect/request timeouts (fail in seconds, not the 8.7-min hang) + anonymous-read support for credential-less collaborators
-- [ ] `scripts/query.R`: examples verified against new return type (esp. Example 3); note Parameter now int32/hive (column absent inside individual files)
-- [ ] `README.Rmd`: layout tree (canonical + raw framing), dedup explanation now build-time, browser-URL caveat, documented monthly rewrite window, refresh `data/result.rds`; **full re-render** of README.md + index.html (no hand-patching)
-- [ ] End-to-end: `query_canonical()` from local machine against S3 canonical — correct + fast
+- [x] `query-helpers.R`: default root → `data/canonical/`, dropped slice_max dedup, kept `to_duckdb()` bridge; S3FileSystem with connect/request 10s/60s timeouts. **Anonymous-read finding**: bucket policy grants only `s3:GetObject` — anonymous `open_dataset()` (needs ListBucket) never worked and still needs the rtj s3-module policy fix; helper uses the default credential chain meanwhile.
+- [x] `scripts/query.R`: layout header rewritten (canonical primary, raw provenance, hive int/absent-column caveat); counts updated to canonical-store totals; Example 3 (grouped slice_max) verified live
+- [x] `README.Rmd`: canonical-first layout tree + meta, build-time dedup story, hive + rewrite-window caveats, param table updated, `data/result.rds` refreshed (294 stations, 3.9s); full re-render of README.md + index.html, content-verified
+- [x] End-to-end against live S3 canonical: Ex1 3,920 rows 1.8s; Ex3 latest-per-station 294 stations 1.3s (was minutes); Ex2 discharge window 1.1s; Parameter returns int
 
 ## Validation
 
