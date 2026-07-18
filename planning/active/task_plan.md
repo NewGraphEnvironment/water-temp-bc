@@ -35,7 +35,7 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Validation
 
-- [ ] compact-test.R passes
-- [ ] `/code-check` clean on each commit
-- [ ] PWF checkboxes match landed work
+- [x] compact-test.R passes (31 assertions, T0-T9 incl. sharding)
+- [x] `/code-check`-style self-review on each commit (findings fixed pre-commit: meta-fetch 404 discrimination, empty-input guard, ts shadowing, bogus T8 assertion)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
