@@ -6,7 +6,7 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Phase 1: Test fixtures first
 
-- [ ] `scripts/compact-test.R` — fixture snapshots + assertions, plain Rscript, non-zero exit on failure. Matrix: QC-correction wins (newer harvested_at, different Value); aged-out date only in oldest snapshot survives; harvested_at tie → deterministic winner; NA Date dropped + counted; catch-up (canonical + 2 unmerged snapshots); re-merge idempotency (no-op); arrow read-back `filter(Parameter == N)` prunes + returns int32; row-group date-stats stratify (ordered write)
+- [x] `scripts/compact-test.R` — fixture snapshots + assertions, plain Rscript, non-zero exit on failure. Matrix: QC-correction wins (newer harvested_at, different Value); aged-out date only in oldest snapshot survives; harvested_at tie → deterministic winner; NA Date dropped + counted; catch-up (canonical + 2 unmerged snapshots); re-merge idempotency (no-op); arrow read-back `filter(Parameter == N)` prunes + returns int32; row-group date-stats stratify (ordered write). Red by design until Phase 2 lands `compact-functions.R`.
 
 ## Phase 2: `scripts/compact.R`
 
