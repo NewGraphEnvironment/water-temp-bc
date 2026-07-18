@@ -7,4 +7,5 @@
 - Created branch `23-compact-overlapping-snapshots-partition` off main
 - Scaffolded PWF baseline from issue #23 with approved phases
 - Phase 1: `scripts/compact-test.R` written — 9 sections (T0 watermark selection through T9 invariant gate), 27 assertions, plain-Rscript harness, exits 1 on failure. Confirmed red (clean "compact-functions.R not found" error). Contract in the header defines Phase 2's API: `compact_select_inputs()`, `compact_run()`, `compact_verify()`.
-- Next: Phase 2 (compact-functions.R + compact.R orchestrator; make tests green)
+- Phase 2: `compact-functions.R` (core: select_inputs/run/verify, `params` filter for per-partition orchestration) + `compact.R` (S3 orchestrator: meta-as-commit-marker watermark, per-partition download→merge→verify→sync→free loop, param-set union so absent params survive). All 27 tests green. Findings: duckdb clamps ROW_GROUP_SIZE to ~2048 floor; `invisible()` on compact_run return; meta-fetch distinguishes 404 from transient errors (else loud failure, not silent bootstrap). jsonlite added to DESCRIPTION.
+- Next: Phase 3 (snapshot.yml integration + compact_only dispatch input)

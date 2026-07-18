@@ -10,10 +10,10 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Phase 2: `scripts/compact.R`
 
-- [ ] Watermark catch-up merge: list S3 snapshot dirs, merge canonical + all dirs ≥ watermark (inclusive); bootstrap = no canonical → all raw; single code path; inputs downloaded from S3 (no httpfs dependency)
-- [ ] Per-Parameter loop: filter, window dedup w/ tiebreaker, drop NULL Date/Parameter (log + 0.1% threshold), cast Parameter INTEGER, `COPY ... ORDER BY STATION_NUMBER, Date` zstd; `PRAGMA memory_limit` + `temp_directory` for the 7 GB runner
-- [ ] Invariant gate before upload: key uniqueness, rowcount ≥ previous canonical, zero NULL dates, 4 partitions present, sane date range; refuse to sync on failure; summary output mirroring snapshot.R style
-- [ ] compact-test.R green against the real compact functions
+- [x] Watermark catch-up merge: list S3 snapshot dirs, merge canonical + all dirs ≥ watermark (inclusive); bootstrap = no canonical → all raw; single code path; inputs downloaded from S3 (no httpfs dependency). Watermark = `data/canonical_meta.json`, uploaded only after all partitions publish (commit marker → failed runs self-heal).
+- [x] Per-Parameter loop: filter, window dedup w/ tiebreaker, drop NULL Date/Parameter (log + 0.1% threshold), cast Parameter INTEGER, `COPY ... ORDER BY STATION_NUMBER, Date` zstd; `SET memory_limit` + `temp_directory` for the 7 GB runner. Split as `compact-functions.R` (testable core, `params` arg for one-partition-per-pass) + `compact.R` (S3 orchestrator; params = raw ∪ existing canonical partitions so an absent param is preserved).
+- [x] Invariant gate before upload: key uniqueness, rowcount ≥ previous canonical (per-partition, from meta), zero NULL dates, partitions present, sane date range; refuse to sync on failure; summary output mirroring snapshot.R style
+- [x] compact-test.R green against the real compact functions (27/27; duckdb clamps ROW_GROUP_SIZE to ~2048 floor — T8 fixture sized above it)
 
 ## Phase 3: Workflow integration
 

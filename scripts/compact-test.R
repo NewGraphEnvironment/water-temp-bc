@@ -209,12 +209,16 @@ check("filter(Parameter == 5) returns exactly the Parameter=5 partition",
 check("params reported by compact_run", setequal(r1$params, c(5L, 46L)))
 
 # --- T8: ordered write -> stratified row groups ------------------------------
+# duckdb clamps ROW_GROUP_SIZE to a floor (~2048), so the fixture must exceed
+# it to prove the writer honors the setting.
 section("T8 row-group ordering (ORDER BY STATION_NUMBER, Date)")
+day_seq <- format(seq(utc("2025-01-01 00:00:00"), by = "hour", length.out = 900),
+                  "%Y-%m-%d %H:%M:%S")
 many <- dplyr::bind_rows(lapply(sprintf("S%02d", 1:6), function(s)
-  make_rows(s, 5, c(d1, d2, d3), c(1, 2, 3), h1)))
+  make_rows(s, 5, day_seq, seq_along(day_seq), h1)))
 snapM <- write_snapshot("snapshot_2026-10-01", many)
 oM <- out_dir()
-compact_run(snapM, oM, row_group_size = 4L)
+compact_run(snapM, oM, row_group_size = 2048L)
 f5 <- fs::dir_ls(fs::path(oM, "Parameter=5"), glob = "*.parquet")
 check("exactly one file per partition", length(f5) == 1)
 reader <- arrow::ParquetFileReader$create(f5[[1]])
