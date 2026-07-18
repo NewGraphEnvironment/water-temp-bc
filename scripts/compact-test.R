@@ -13,10 +13,12 @@
 #               memory_limit = NULL, temp_dir = NULL) -> list(rows_written,
 #     rows_in, null_dropped, params)
 #     - dedup: latest harvested_at per (STATION_NUMBER, Parameter, Date),
-#       ties broken deterministically (Value, Grade, Approval DESC NULLS LAST)
+#       ties broken deterministically (Value DESC NULLS LAST)
 #     - drops NULL Date / NULL Parameter rows; errors if their fraction of
 #       input rows exceeds null_frac_max
-#     - output: hive dirs Parameter=<int>/, zstd, ORDER BY STATION_NUMBER, Date
+#     - output: hive dirs Parameter=<int>/part-<k>.parquet, zstd, each file
+#       ORDER BY STATION_NUMBER, Date; partitions hash-shard by station into
+#       ceiling(input_rows / shard_rows) files so aggregate state fits memory
 #     - canonical_dir (hive-partitioned, Parameter int32 in path) merges with
 #       raw snapshots (Parameter double column) transparently
 #   compact_verify(out_dir, prev_rows = 0, date_min_floor, date_max_ceiling)
@@ -49,16 +51,18 @@ fs::dir_create(TEST_ROOT)
 
 utc <- function(x) as.POSIXct(x, tz = "UTC")
 
-# Fixture rows mirror the real snapshot schema's load-bearing columns;
-# Code stands in for the passthrough columns (Name_En, Unit, ...) that
-# compaction must preserve without knowing about.
+# Fixture rows mirror the real snapshot schema's load-bearing columns AND
+# their real types — Grade is a double in production (a string sentinel in
+# the dedup ordering once broke only on real data). Code stands in for the
+# passthrough columns (Name_En, Unit, ...) that compaction must preserve
+# without knowing about.
 make_rows <- function(station, param, dates, values, harvested,
-                      grade = "P", approval = "Provisional") {
+                      grade = 10, approval = "Provisional") {
   tibble::tibble(
     STATION_NUMBER = station,
     Date           = utc(dates),
     Value          = values,
-    Grade          = grade,
+    Grade          = as.numeric(grade),
     Approval       = approval,
     Parameter      = as.numeric(param),
     Code           = "PASSTHRU",
@@ -105,7 +109,7 @@ snapA <- write_snapshot("snapshot_2026-05-14", dplyr::bind_rows(
 ))
 # snapB (newer pull, window no longer covers d0): QC-corrected values for d1-d3
 snapB <- write_snapshot("snapshot_2026-06-01", dplyr::bind_rows(
-  make_rows("S1", 5, c(d1, d2, d3), c(20, 30, 40), h2, grade = "F", approval = "Approved"),
+  make_rows("S1", 5, c(d1, d2, d3), c(20, 30, 40), h2, grade = 9, approval = "Approved"),
   make_rows("S2", 46, c(d1, d2), c(100, 101), h2)
 ))
 # snapC: a third station appears
@@ -136,7 +140,7 @@ s1 <- got |> dplyr::filter(STATION_NUMBER == "S1", Parameter == 5) |> dplyr::arr
 check("QC-corrected values win (newer harvested_at)",
       identical(s1$Value[s1$Date %in% utc(c(d1, d2, d3))], c(20, 30, 40)))
 check("QC-corrected Grade/Approval ride along",
-      all(s1$Grade[s1$Date == utc(d1)] == "F", s1$Approval[s1$Date == utc(d1)] == "Approved"))
+      all(s1$Grade[s1$Date == utc(d1)] == 9, s1$Approval[s1$Date == utc(d1)] == "Approved"))
 check("aged-out date d0 (only in oldest snapshot) survives",
       nrow(s1[s1$Date == utc(d0), ]) == 1 && s1$Value[s1$Date == utc(d0)] == 1)
 check("row accounting: rows_in = 11, rows_written = 6 S1+S2 keys",
@@ -232,6 +236,24 @@ codec <- DBI::dbGetQuery(con, sprintf(
   "SELECT DISTINCT compression FROM parquet_metadata('%s')", f5[[1]]))$compression
 DBI::dbDisconnect(con, shutdown = TRUE)
 check("zstd codec on data pages", all(grepl("ZSTD", codec, ignore.case = TRUE)))
+
+# --- T8b: station-hash sharding (memory-bounding at scale) -------------------
+section("T8b sharding (shard_rows forces multi-file partitions)")
+oS <- out_dir()
+compact_run(snapM, oS, shard_rows = 3000, row_group_size = 2048L)
+fS <- fs::dir_ls(fs::path(oS, "Parameter=5"), glob = "*.parquet")
+check("multiple shard files written", length(fS) >= 2)
+check("sharded content equals unsharded content",
+      same_content(read_canonical(oS), read_canonical(oM)))
+per_file_stations <- lapply(fS, function(f)
+  unique(arrow::read_parquet(f, col_select = "STATION_NUMBER")$STATION_NUMBER))
+check("no station spans two shard files",
+      sum(lengths(per_file_stations)) == length(unique(unlist(per_file_stations))))
+check("each shard file internally ordered",
+      all(vapply(fS, function(f) {
+        x <- arrow::read_parquet(f, col_select = c("STATION_NUMBER", "Date"))
+        identical(order(x$STATION_NUMBER, x$Date), seq_len(nrow(x)))
+      }, logical(1))))
 
 # --- T9: invariant gate ------------------------------------------------------
 section("T9 compact_verify invariants")

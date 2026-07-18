@@ -73,3 +73,37 @@ This is a **trajectory** problem, not a today-emergency: with only 3 snapshots t
 - **G6:** accept the ~1–2 min monthly sync window over a version-pointer scheme (few readers; simplicity is the product). Document rewrite window in README. Pointer scheme = future option.
 - **O2:** every `sync --delete` scoped to the exact partition dir — `stations_realtime.parquet`, `historic/`, `realtime/` all share the `data/` prefix.
 - **A2:** arrow S3 timeouts require `S3FileSystem$create(connect_timeout=, request_timeout=)` + `$path()` — the plain `"s3://..."` URI form doesn't accept them; must also verify anonymous read still works for credential-less collaborators.
+
+## Real-data hardening (Phase 4 bootstrap, 2026-07-18)
+
+Three failures that ONLY real volume could expose (fixtures were green throughout):
+
+1. **duckdb window dedup OOMs**: QUALIFY row_number() over the ~124M-row
+   Parameter=46 input exhausted an 8 GB memory_limit. The window operator
+   cannot spill enough. `preserve_insertion_order=false` + fewer threads did
+   not save it.
+2. **arg_max hash aggregate cannot spill either**: rewrote dedup as
+   arg_max(row_struct, (harvested_at, coalesce(Value, -1e308))) GROUP BY key —
+   still OOM'd at 4 GB with the spill dir at ~0 bytes even on a FILE-BACKED
+   connection (in-memory connections don't offload at all; file-backed enables
+   offload but struct-payload aggregate state is not externalized).
+3. **Real schema broke the tiebreak sentinel**: production `Grade` is a
+   double; fixtures had it as string, so `coalesce(s.Grade, '')` only failed
+   on real data. Fixtures now mirror real types; tiebreaker simplified to
+   (harvested_at, Value) — Grade/Approval links could never fire anyway since
+   within-pull keys are verified unique.
+
+**Final structure that works**: hash-shard each partition by STATION_NUMBER
+into ceiling(input_rows / shard_rows=10e6) sub-passes; a key never crosses
+shards so dedup stays exact; each shard writes its own internally-ordered
+part-<k>.parquet. Memory scales as 1/K — bounded at any future store size.
+
+**Decisive run at exact GHA profile (memory_limit=4GB, threads=2), local**:
+159 s, rows_written = 98,726,492 (GOLDEN CHECK PASS — equals the measured
+read-time-dedup count), compact_verify PASS, all 30 output files internally
+ordered. Per-param: 5=4,474,827  6=155,261  46=49,697,562  47=44,398,842.
+
+**Lifecycle rule**: put-bucket-lifecycle-configuration was blocked by the
+permission classifier — needs user to run or allow. Merged config staged at
+scratchpad/lifecycle-merged.json (existing IA-transition rule + new
+canonical-noncurrent-expiry, 90d, prefix data/canonical/).

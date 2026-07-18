@@ -35,11 +35,31 @@ compact_select_inputs <- function(dir_names, watermark_date = NULL) {
 # partition per pass; NULL processes every parameter found in the inputs.
 compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
                         params = NULL, null_frac_max = 0.001,
-                        row_group_size = 122880L,
-                        memory_limit = NULL, temp_dir = NULL) {
+                        row_group_size = 122880L, shard_rows = 10e6,
+                        memory_limit = NULL, temp_dir = NULL, threads = NULL) {
   if (length(snapshot_dirs) == 0) stop("compact_run: no snapshot dirs given")
-  con <- DBI::dbConnect(duckdb::duckdb())
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  # File-backed connection, NOT in-memory: duckdb only offloads operator
+  # state (aggregate/sort spill) to disk for file-backed databases — the
+  # in-memory default kept the spill dir empty and OOM'd on real volumes.
+  db_file <- if (!is.null(temp_dir)) {
+    fs::dir_create(temp_dir, recurse = TRUE)
+    fs::path(temp_dir, "compact.duckdb")
+  } else {
+    fs::file_temp(ext = "duckdb")
+  }
+  if (fs::file_exists(db_file)) fs::file_delete(db_file)
+  con <- DBI::dbConnect(duckdb::duckdb(dbdir = as.character(db_file)))
+  on.exit({
+    DBI::dbDisconnect(con, shutdown = TRUE)
+    if (fs::file_exists(db_file)) fs::file_delete(db_file)
+  }, add = TRUE)
+  # Insertion order is irrelevant (every COPY carries an explicit ORDER BY)
+  # and preserving it made the real-data merge OOM at 8 GB — duckdb buffers
+  # far less without it.
+  DBI::dbExecute(con, "SET preserve_insertion_order = false")
+  if (!is.null(threads)) {
+    DBI::dbExecute(con, sprintf("SET threads = %d", as.integer(threads)))
+  }
   if (!is.null(memory_limit)) {
     DBI::dbExecute(con, sprintf("SET memory_limit = '%s'", sql_q(memory_limit)))
   }
@@ -82,26 +102,49 @@ compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
   for (p in todo) {
     pdir <- fs::path(out_dir, sprintf("Parameter=%d", p))
     fs::dir_create(pdir)
-    # Parameter is constant within the pass, so the window partitions only on
-    # (STATION_NUMBER, Date). Tiebreakers past harvested_at make re-runs
-    # byte-reproducible when a pull contains exact-key duplicates.
-    n <- DBI::dbExecute(con, sprintf("
-      COPY (
-        SELECT * EXCLUDE (Parameter)
-        FROM inputs
-        WHERE Date IS NOT NULL AND Parameter IS NOT NULL
-          AND CAST(Parameter AS INTEGER) = %d
-        QUALIFY row_number() OVER (
-          PARTITION BY STATION_NUMBER, Date
-          ORDER BY harvested_at DESC,
-                   Value DESC NULLS LAST,
-                   Grade DESC NULLS LAST,
-                   Approval DESC NULLS LAST
-        ) = 1
-        ORDER BY STATION_NUMBER, Date
-      ) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE %d)",
-      p, sql_q(as.character(fs::path(pdir, "part-0.parquet"))),
-      as.integer(row_group_size)))
+    # Dedup via arg_max hash aggregate, NOT a window function (the window
+    # operator OOM'd an 8 GB limit on the real ~124M-row partition). But
+    # arg_max's struct-payload aggregate state cannot spill to disk either
+    # (observed: OOM with an empty temp_directory), so each partition is
+    # hash-sharded by STATION_NUMBER into passes small enough to hold in
+    # memory. A key never crosses shards, so dedup stays exact; each shard
+    # writes its own internally-ordered part-<k>.parquet and per-file
+    # row-group stats still prune station/date queries.
+    n_p <- DBI::dbGetQuery(con, sprintf(
+      "SELECT count(*)::BIGINT AS n FROM inputs
+       WHERE Date IS NOT NULL AND Parameter IS NOT NULL
+         AND CAST(Parameter AS INTEGER) = %d", p))$n
+    n_shards <- max(1L, as.integer(ceiling(n_p / shard_rows)))
+    n <- 0L
+    for (k in seq_len(n_shards) - 1L) {
+      shard_filter <- if (n_shards > 1L) {
+        sprintf("AND hash(STATION_NUMBER) %% %d = %d", n_shards, k)
+      } else ""
+      # arg_max keeps the whole row with the max (harvested_at, Value)
+      # tuple: latest harvested_at wins, Value DESC NULLS LAST breaks
+      # within-pull ties. Rows tying on both are interchangeable in
+      # practice (within-pull keys are unique in real snapshots).
+      n <- n + DBI::dbExecute(con, sprintf("
+        COPY (
+          WITH src AS (
+            SELECT * EXCLUDE (Parameter)
+            FROM inputs
+            WHERE Date IS NOT NULL AND Parameter IS NOT NULL
+              AND CAST(Parameter AS INTEGER) = %d
+              %s
+          )
+          SELECT unnest(arg_max(s, (
+                   s.harvested_at,
+                   coalesce(s.Value, -1e308)
+                 )))
+          FROM src s
+          GROUP BY s.STATION_NUMBER, s.Date
+          ORDER BY s.STATION_NUMBER, s.Date
+        ) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE %d)",
+        p, shard_filter,
+        sql_q(as.character(fs::path(pdir, sprintf("part-%d.parquet", k)))),
+        as.integer(row_group_size)))
+    }
     written[as.character(p)] <- n
   }
 
