@@ -22,9 +22,9 @@ Design pressure-tested by Plan-agent review during plan mode (2026-07-18); block
 
 ## Phase 4: Bootstrap + verify
 
-- [ ] Bootstrap canonical over the 3 existing snapshots (compact-only dispatch or local run + sync)
-- [ ] AC1: canonical rows == 98,726,492; spot-check broad-query timing vs old path from local machine
-- [ ] One-time: `NoncurrentVersionExpiration` (~90d) lifecycle rule scoped to `data/canonical/`; record in findings.md
+- [x] Bootstrap canonical over the 3 existing snapshots — local sharded merge at exact GHA profile (4GB/2 threads, 159s), synced to `s3://water-temp-bc/data/canonical/` (30 objects, **0.37 GB** — zstd 5× smaller than raw) + `canonical_meta.json` watermark `snapshot_2026-07-01`. Post-merge `compact_only` dispatch will verify the production "up to date" path.
+- [x] AC1: canonical rows == 98,726,492 (golden PASS local); live-S3 spot-check: param-47 count matches exactly, broad aggregate 6.6s over network incl. discovery (previously minutes-to-hang)
+- [x] `NoncurrentVersionExpiration` lifecycle — **redirected to rtj**: bucket lifecycle is owned by rtj `modules/s3/main.tf:141` (`aws_s3_bucket_lifecycle_configuration`); a CLI put would be clobbered on next `tofu apply`. Needs a module variable + rule in rtj (issue to file, pending user go). Staged JSON + analysis in findings.md.
 
 ## Phase 5: Readers + docs
 

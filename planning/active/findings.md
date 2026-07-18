@@ -107,3 +107,24 @@ ordered. Per-param: 5=4,474,827  6=155,261  46=49,697,562  47=44,398,842.
 permission classifier — needs user to run or allow. Merged config staged at
 scratchpad/lifecycle-merged.json (existing IA-transition rule + new
 canonical-noncurrent-expiry, 90d, prefix data/canonical/).
+
+## Lifecycle rule must go through rtj tofu (2026-07-18)
+
+The water-temp-bc bucket is fully Terraform-managed: rtj `env/prod/main.tf`
+declares it via `modules/s3`, and the module OWNS
+`aws_s3_bucket_lifecycle_configuration "lifecycle"` (modules/s3/main.tf:141,
+hardcoded single transition-to-standard-ia rule, no variables). A CLI
+put-bucket-lifecycle-configuration would be REVERTED on the next tofu apply —
+silent rule deletion, worse than drift. Correct path: parameterize the module
+(e.g. `noncurrent_expiry` variable: list of {prefix, days}) and set
+`data/canonical/` / 90d for water-temp-bc in env/prod. Belongs in an rtj
+issue. Upside discovered en route: canonical on S3 is 0.37 GB (duckdb zstd),
+so stranded noncurrent versions cost ~half a cent/month each — no urgency.
+
+## Bootstrap live on S3 (2026-07-18)
+
+- `s3://water-temp-bc/data/canonical/` — 30 objects, 0.37 GB, Parameter=<int>
+  hive dirs, meta at `data/canonical_meta.json` (watermark snapshot_2026-07-01)
+- Live spot-check: param 47 → 44,398,842 rows (exact match with local),
+  Date range 2024-10-10 → 2026-07-01, Parameter int32, broad aggregate 6.6s
+  over the network including dataset discovery
