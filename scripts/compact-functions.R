@@ -35,7 +35,7 @@ compact_select_inputs <- function(dir_names, watermark_date = NULL) {
 # partition per pass; NULL processes every parameter found in the inputs.
 compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
                         params = NULL, null_frac_max = 0.001,
-                        row_group_size = 122880L, shard_rows = 10e6,
+                        row_group_size = 122880L, shard_rows = 6e6,
                         memory_limit = NULL, temp_dir = NULL, threads = NULL) {
   if (length(snapshot_dirs) == 0) stop("compact_run: no snapshot dirs given")
   # File-backed connection, NOT in-memory: duckdb only offloads operator
@@ -110,6 +110,10 @@ compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
     # memory. A key never crosses shards, so dedup stays exact; each shard
     # writes its own internally-ordered part-<k>.parquet and per-file
     # row-group stats still prune station/date queries.
+    # shard_rows = 6e6: 10e6 passed locally at the 4GB/2-thread profile but
+    # OOM'd the real GHA runner (run 29675228557, partition 47) — local
+    # physical-RAM headroom masks how tight duckdb's accounting runs at the
+    # limit. Extra passes cost scan time only; state per pass is what OOMs.
     n_p <- DBI::dbGetQuery(con, sprintf(
       "SELECT count(*)::BIGINT AS n FROM inputs
        WHERE Date IS NOT NULL AND Parameter IS NOT NULL
