@@ -11,85 +11,71 @@ on GitHub</a>
 
 <a href="https://github.com/NewGraphEnvironment/water-temp-bc" title="View source on GitHub"><img src="fig/cover.JPG" width="100%" alt="water-temp-bc" style="display: block; margin: auto;"/></a>
 
-The goal of `water-temp-bc` is to document and serve out British
-Columbia water temperature (and other realtime hydrometric) data. We
-scrape the Environment Canada (ECCC) realtime feed for every BC station
-once a month via [a GitHub Actions cron](.github/workflows/snapshot.yml)
-and publish the result as a partitioned parquet dataset on S3.
+Water temperature, discharge, and water level for ~290 BC hydrometric
+stations, queryable straight from S3 — no database, nothing to download
+up front. A [monthly GitHub Actions
+cron](.github/workflows/snapshot.yml) re-pulls the full ~18-month window
+Environment Canada (ECCC) serves and compacts it into one deduplicated
+parquet dataset, so QC corrections automatically replace earlier
+provisional readings and the record keeps growing month over month.
+
+<br>
+
+## Quick start
+
+``` r
+install.packages(c("arrow", "dplyr", "duckdb", "dbplyr", "lubridate"))
+
+source("https://raw.githubusercontent.com/NewGraphEnvironment/water-temp-bc/main/scripts/query-helpers.R")
+
+# water temperature, one station, last 6 months
+query_canonical(parameter = 5, stations = "07EA004", from = Sys.Date() - 180) |>
+  dplyr::collect()
+```
+
+`query_canonical()` returns a lazy dplyr query — filter by `parameter`,
+`stations`, `from`/`to`, chain any dplyr verbs, and `collect()` when you
+want the data in memory. Typical queries return in a few seconds. No AWS
+account or credentials needed — the bucket is fully public.
+[`scripts/query.R`](scripts/query.R) has more worked examples (daily
+means across stations, latest reading per station).
+
+<br>
+
+## What’s in it
+
+| `Parameter` | Name                               | Unit | Rows       | Stations |
+|-------------|------------------------------------|------|------------|----------|
+| `5`         | Water temperature                  | °C   | 4,474,827  | 291      |
+| `6`         | Discharge (daily mean)             | m³/s | 155,261    | 252      |
+| `46`        | Water level (primary sensor)       | m    | 49,697,562 | 288      |
+| `47`        | Discharge (primary sensor derived) | m³/s | 44,398,842 | 255      |
+
+**For realtime discharge use `47`, not `6`** — `6` is one value per day;
+`5`, `46` and `47` are high-frequency sensor readings. Record starts
+2024-10 and grows monthly. Station locations and metadata live in
+`stations_realtime.parquet` (table below).
 
 <br>
 
 ## Data layout
 
     s3://water-temp-bc/data/
-    ├── realtime/<yyyy>/<mm>/snapshot_<yyyy-mm-dd>/chunk_NNN.parquet  # canonical, append-only
-    ├── historic/realtime_raw_*.parquet                                # frozen pre-modernization
-    └── stations_realtime.parquet                                      # station metadata
+    ├── canonical/Parameter=<n>/part-*.parquet     # THE dataset — query this
+    ├── realtime/<yyyy>/<mm>/snapshot_.../         # raw monthly pulls (provenance only)
+    ├── historic/realtime_raw_*.parquet            # frozen pre-2026 archive, odd schemas
+    └── stations_realtime.parquet                  # station metadata
 
-Each snapshot is a *directory* of chunked parquet files, not a single
-file — the monthly pull is chunked to keep memory bounded on the GitHub
-Actions runner. Readers never need to care: `arrow::open_dataset()`
-walks the whole tree and `query_canonical()` handles it for you.
-
-The bucket lives in `us-west-2`. To pull a raw file in a browser, the
-URL needs the explicit region:
-
-    https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet
-
-Each monthly snapshot pulls the full ~18-month realtime window (the most
-ECCC serves) and tags every row with a `harvested_at` timestamp.
-Consecutive snapshots overlap by design, and the canonical value at each
-`(STATION_NUMBER, Parameter, Date)` is the row with the most recent
-`harvested_at` — that’s how QC corrections from ECCC win over earlier
-provisional readings. The dedup is handled at read time by
-`query_canonical()` so callers don’t have to think about it.
-
-The `historic/` prefix preserves the pre-modernization parquets as-is
-for explicit archival reads. Their schemas are heterogeneous (different
-column types, different column sets) — read them one at a time with
-awareness of their shape.
-
-<br>
-
-## How to query
-
-`scripts/query.R` has top-to-bottom worked examples (water temp for one
-station, daily means across stations, latest reading per station,
-reading a historic file). The short version:
-
-``` r
-source("scripts/query-helpers.R")
-
-# Water temperature for one station, last 6 months
-query_canonical(parameter = 5, stations = "07EA004", from = Sys.Date()-180) |>
-  dplyr::collect()
-```
-
-`query_canonical()` returns a lazy dplyr query against the partitioned
-`realtime/` tree on S3, automatically deduped on
-`(STATION_NUMBER, Parameter, Date)` by taking the row with the latest
-`harvested_at`. Chain more dplyr verbs and call `dplyr::collect()` when
-you want the data in memory.
-
-<br>
-
-## Parameters
-
-Each snapshot carries *every* parameter ECCC serves for a station.
-Despite the repo name, water temperature is a small slice of the archive
-— water level and discharge dominate. This is the complete set (counts
-from the 2026-06-01 snapshot: 291 stations, ~19-month window):
-
-| `Parameter` | Name                               | Unit | Rows       | Stations |
-|-------------|------------------------------------|------|------------|----------|
-| `5`         | Water temperature                  | °C   | 4,108,352  | 291      |
-| `6`         | Discharge (daily mean)             | m³/s | 142,618    | 252      |
-| `46`        | Water level (primary sensor)       | m    | 45,507,879 | 288      |
-| `47`        | Discharge (primary sensor derived) | m³/s | 40,716,328 | 255      |
-
-`6` is a daily-mean series — one value per day. `5`, `46` and `47` are
-high-frequency sensor readings. **For realtime discharge use `47`, not
-`6`.**
+- `canonical/` is deduplicated at build time — newest QC’d value per
+  station, parameter, and timestamp. `query_canonical()` and
+  `arrow::open_dataset()` both read it directly.
+- `realtime/` keeps every raw overlapping pull; ~2/3 duplicate rows by
+  design. Only useful if you need pre-correction history.
+- Single files fetched by URL need the region, e.g.
+  `https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet`
+  (note: files under `canonical/` carry `Parameter` in the directory
+  name, not as a column). The store is rewritten ~12:00–14:00 UTC on the
+  1st of each month.
 
 <br>
 
@@ -103,8 +89,8 @@ stations <- arrow::read_parquet("s3://water-temp-bc/data/stations_realtime.parqu
 ```
 
 ``` r
-# Per-station date ranges in the canonical realtime/ dataset. Slow over the
-# network so we cache the result locally and only refresh on demand.
+# Per-station date ranges in the canonical dataset. Cached locally; refresh
+# on demand with params$update_query (seconds against canonical/).
 range <- query_canonical(parameter = 5) |>
   dplyr::group_by(STATION_NUMBER) |>
   dplyr::summarise(
