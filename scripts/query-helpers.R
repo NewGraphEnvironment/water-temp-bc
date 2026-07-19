@@ -24,14 +24,14 @@ suppressPackageStartupMessages({
 
 # Open a dataset with explicit S3 timeouts. The default S3 client retries a
 # transient DNS/network failure with long backoff (observed: 8.7 min before
-# erroring); these bounds make it fail in seconds instead. Credentials use
-# arrow's default chain (env/config when present, anonymous otherwise).
-# NOTE: the bucket policy currently grants only s3:GetObject, so dataset
-# discovery (listing) needs credentials until s3:ListBucket is added to the
-# public policy — tracked for the rtj s3 module.
+# erroring); these bounds make it fail in seconds instead. anonymous = TRUE:
+# the bucket policy grants public GetObject + ListBucket (rtj#187), so no
+# one needs AWS credentials — and expired/misconfigured local credentials
+# can't break reads either.
 open_dataset_canonical <- function(dataset_root) {
   if (grepl("^s3://", dataset_root)) {
     fs <- arrow::S3FileSystem$create(
+      anonymous       = TRUE,
       region          = "us-west-2",
       connect_timeout = 10,
       request_timeout = 60

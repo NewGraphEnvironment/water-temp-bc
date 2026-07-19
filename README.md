@@ -35,12 +35,10 @@ query_canonical(parameter = 5, stations = "07EA004", from = Sys.Date() - 180) |>
 
 `query_canonical()` returns a lazy dplyr query — filter by `parameter`,
 `stations`, `from`/`to`, chain any dplyr verbs, and `collect()` when you
-want the data in memory. Typical queries return in a few seconds.
+want the data in memory. Typical queries return in a few seconds. No AWS
+account or credentials needed — the bucket is fully public.
 [`scripts/query.R`](scripts/query.R) has more worked examples (daily
 means across stations, latest reading per station).
-
-You currently need AWS credentials configured (any account, free tier is
-fine) — fully anonymous access is planned.
 
 <br>
 
