@@ -28,12 +28,12 @@ The script halts before any data is pulled, so upload and compaction are skipped
 - [x] Local smoke test of station resolution only (no 40-minute pull): real live path (expect ~446 with xlsx), and a forced-failure path (expect ~462)
 
 ## Phase 3: Runner diagnostics
-- [ ] `snapshot.yml`: add an "ECCC reachability" step right after checkout, unconditional, so it also runs on `compact_only` and on branch dispatches (plan review moved it; it was first placed before Pull, behind `compact_only`)
+- [x] `snapshot.yml`: add an "ECCC reachability" step right after checkout, unconditional, so it also runs on `compact_only` and on branch dispatches (plan review moved it; it was first placed before Pull, behind `compact_only`)
   - `curl` the datamart station list (`dd.weather.gc.ca/today/hydrometric/doc/hydrometric_StationList.csv`) and a one-station `wateroffice.ec.gc.ca` realtime query
   - use `--connect-timeout 60 --max-time 90`, and print http_code, remote_ip, time_connect, time_appconnect and time_total (a connect that stalls in TLS points at a middlebox)
   - it never fails the job (`continue-on-error: true`, and each probe reports "unreachable" instead of exiting), with stderr left visible
   - the 60 s connect timeout (vs curl R's hardcoded 10 s) is what separates "slow to connect" from "blocked"
-- [ ] `snapshot.yml`: move `configure-aws-credentials` to after Pull (plan review). The pull needs no AWS and can take 40–90 min, and the action's default session is 1 h, so credentials fetched first could expire before Upload/Compact. A side effect: a branch dispatch now runs the probe and the full pull before stopping at the main-only OIDC trust, with no S3 writes
+- [x] `snapshot.yml`: move `configure-aws-credentials` to after Pull (plan review). The pull needs no AWS and can take 40–90 min, and the action's default session is 1 h, so credentials fetched first could expire before Upload/Compact. A side effect: a branch dispatch now runs the probe and the full pull before stopping at the main-only OIDC trust, with no S3 writes
 
 ## Phase 4: Validate on the real runner
 - [ ] PR + merge (Upload and Compact need the OIDC role, which trusts `main` only)
@@ -49,7 +49,7 @@ The script halts before any data is pulled, so upload and compaction are skipped
 
 ## Validation
 
-- [ ] Tests pass
-- [ ] `/code-check` clean on each commit
-- [ ] PWF checkboxes match landed work
+- [x] Tests pass
+- [x] `/code-check` clean on each commit
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
