@@ -22,10 +22,10 @@ The script halts before any data is pulled, so upload and compaction are skipped
 - [x] Restore-the-bug check: against a one-shot `snapshot_stations()` that just calls `fetch_live()` (today's behaviour), T2–T5 must fail
 
 ## Phase 2: Station resolver
-- [ ] `scripts/snapshot-functions.R`: `snapshot_stations()` as above: retry on error with a fixed `wait`, fall back to the bundled list, return ids + source + attempts + last error
-- [ ] `scripts/snapshot.R`: source the functions file and replace the station block (lines 30–43). Log the source, attempt count, last error, and station count. Keep the existing xlsx-missing warning. Update the header comment.
-- [ ] `snapshot-test.R` green
-- [ ] Local smoke test of station resolution only (no 40-minute pull): real live path (expect ~446 with xlsx), and a forced-failure path (expect ~462)
+- [x] `scripts/snapshot-functions.R`: `snapshot_stations()` as above: retry on error with a fixed `wait`, fall back to the bundled list, return ids + source + attempts + last error
+- [x] `scripts/snapshot.R`: source the functions file and replace the station block (lines 30–43). Log the source, attempt count, last error, and station count. Keep the existing xlsx-missing warning. Update the header comment.
+- [x] `snapshot-test.R` green
+- [x] Local smoke test of station resolution only (no 40-minute pull): real live path (expect ~446 with xlsx), and a forced-failure path (expect ~462)
 
 ## Phase 3: Runner diagnostics
 - [ ] `snapshot.yml`: add an "ECCC reachability" step right after checkout, unconditional, so it also runs on `compact_only` and on branch dispatches (plan review moved it; it was first placed before Pull, behind `compact_only`)

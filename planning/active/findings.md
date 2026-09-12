@@ -69,7 +69,7 @@ If the preflight shows `wateroffice.ec.gc.ca` is also unreachable from runners, 
 ### tidyhydat's retries never fire on a connection failure
 - `tidyhydat:::realtime_parser()` sets `req_retry(max_tries = 3)`; `tidyhydat:::tidyhydat_perform()` re-sets `req_retry(max_tries = 5)`.
 - httr2 `req_retry()` defaults `retry_on_failure = FALSE` — retries only transient HTTP statuses, never a failed connection. Hence one 10 s attempt and the step dead after ~11 s. Our own retry-on-error is not redundant.
-- On a 404, `realtime_parser()` returns `NA_character_` and `realtime_stations()` returns a single all-NA row (not an error) — the resolver must treat "no non-NA ids" as failure too.
+- On a 404, `realtime_parser()` returns `NA_character_` and `realtime_stations()` builds a single all-NA row (not an error). **Corrected in review:** with `prov_terr_state_loc = "BC"` that row is then subset away (`%in% prov`), so the production call returns **zero rows**. Either way the resolver must treat "no non-NA ids" as failure too (T5 is the production shape, T4 defensive).
 
 ### Not a URL change
 - tidyhydat 1.0.1 (all three runs) uses `base_url_datamart()` = `https://dd.weather.gc.ca/today/hydrometric/`. Old `dd.weather.gc.ca/hydrometric/...` paths now 404; `/today/...` returns 200 (station list 168,778 B in 0.44 s from a workstation, 2026-09-12).
@@ -86,6 +86,45 @@ If the preflight shows `wateroffice.ec.gc.ca` is also unreachable from runners, 
 - Last pull success 2026-07-01 (42 min pull). 2026-07-19 dispatch success was `compact_only` — Pull + Upload skipped, so it says nothing about ECCC reachability.
 - 581-day window: data from 2026-07-01 onward starts ageing out 2028-02-02 (`date -d '2026-07-01 + 581 days'`).
 
+## Implementation verification (2026-09-12, local)
+
+- `Rscript scripts/snapshot-test.R` → 31/31 PASS, exit 0 (after the review fixes below).
+- Restore-the-bug: same test against a one-shot `snapshot_stations()` mirroring the old `unique(c(realtime_stations(), eccc))` → 26 FAIL, exit 1 (final harness): T2–T5 each 4/4, T7 5/5, T8 2/2; T1 1 and T6 2 from the fixture's NA id. Against a stub that always `stop()`s: 31/31 FAIL.
+  - The first version of this check reported "17 FAIL, every check in T2–T5 red". That was **false**: T3 "last error captured" and T5 "failure message recorded" both passed against the stub. `run_case()` put the crash message into `error`, and `isTRUE(nzchar(NA))` is TRUE. Caught by the plan review. Fixed with a separate `crashed` field and a `filled()` helper.
+- Smoke, real data, exact `fetch_live` wrapper `snapshot.R` uses: live path `source=live attempts=1 n=446` (1.4 s); forced connect failure `source=fallback attempts=3 n=462`. 2 ids only in live (missing from the bundled table), 18 only in the fallback. Matches the plan-mode measurements.
+- Probe step, extracted from the YAML and run under the runner's `bash --noprofile --norc -eo pipefail`:
+  - real hosts: `dd.weather.gc.ca` HTTP 200 ip 205.189.10.47 connect 0.073 s tls 0.150 s; `wateroffice.ec.gc.ca` HTTP 200 ip 205.189.10.52 connect 0.073 s tls 0.192 s; exit 0
+  - datamart swapped for unroutable `10.255.255.1`, 3 s timeout: `UNREACHABLE (curl exit 28)` with curl's own error on stderr, webservice probe still ran, exit 0
+- YAML parses (R `yaml::read_yaml`). Step order: checkout → ECCC reachability → setup-r → deps → Pull snapshot → aws creds → Upload → Compact → Session info.
+- `snapshot.R` annotations, evaluated from the file's own block: the fallback `::warning::` and the retry `::notice::` are each one line, with `%`/CR/LF escaped; nothing is printed on a first-try live success.
+
+## Reviews
+
+### Plan review (Plan agent, 2026-09-12)
+Findings verified before acting:
+- **Accepted and fixed:**
+  - the restore-the-bug claim was false (above)
+  - the 404 shape is zero rows, not an all-NA row: `realtime_stations("BC")` subsets with `%in% prov`, so the NA placeholder row drops. T5 is the production shape and T4 is defensive; comments corrected
+  - a live answer after a retry lost the earlier error; it is now returned and logged as a `::notice::`
+  - AWS credentials were fetched before a 40–90 min pull, and `configure-aws-credentials@v4` `role-duration-seconds` defaults to one hour (checked in its `action.yml`); credentials moved to after Pull
+  - the probe was unreachable on `compact_only` or branch dispatches; moved to right after checkout, unconditional, `continue-on-error`
+  - the probe now also logs `remote_ip` and `time_appconnect`
+  - unused `library(dplyr)` removed from the test
+- **Accepted as a known limitation, not changed:** a fallback run stays green and a `::warning::` sends no email. Confirmed that live `08DA013` and `08DB015` are missing from both the bundled table (absent from `allstations` entirely) and the xlsx. Decision: keep the run green, since a red run with the data already landed trains people to ignore red. The header comment now says plainly that a warning does not notify anyone. The Phase 4 follow-up covers a permanent station-list source if the datamart stays blocked.
+- **Declined:** an id-format regex and a minimum-count floor on the live list. That is speculative for a truncated-body case nobody has seen, and a 403/5xx page already parses to zero BC rows and falls back (confirmed independently by review round 1).
+
+### Code-check round 1 (2026-09-12)
+Clean. Three notes, all already handled by the plan-review fixes or by the per-phase commit split: the 404-shape comment, planning files not matching staged code (the boxes are flipped per phase at commit), and the lost earlier error.
+
+### Code-check round 2 (2026-09-12)
+No defects in code or workflow. It traced all three event shapes after the AWS-credentials move, and the fallback path end to end at the pinned `ngr@1e5758f`. Two stale claims were found in planning notes: `progress.md` still carried the pre-fix "29 assertions / 17 FAIL" and the false restore-the-bug result, and `task_plan.md` T4 still called the all-NA row "the 404 shape". Both fixed.
+
+The second is a defect **inside a previous fix**: correcting the 404 claim touched the code comments and missed the plan text. So the loop was ended by enumeration, not by a quiet round:
+- I grepped every file in the review scope for `all-NA|404|placeholder` and for the old counts.
+- All 404 statements now say zero rows in production, T4 defensive (`snapshot-functions.R:14-16`, `snapshot-test.R:15-16,117,126`, `task_plan.md:17-18`).
+- No stale counts remain.
+- The one further hit outside the review scope, this file's own plan-mode note at line 72, was corrected in place.
+
 ## Errors Encountered
 
 | Error | Resolution |
@@ -93,3 +132,23 @@ If the preflight shows `wateroffice.ec.gc.ca` is also unreachable from runners, 
 | `gh run view --log-failed \| tail` showed only post-job cleanup | The error is mid-log; grep `gh run view --log` for `##[group]Run Rscript` with `-A` context |
 | Error grep truncated by `head -40` before reaching the R step (apt noise first) | Filter apt lines out before `head`, or anchor on the step's `##[group]` line |
 | `date -j -v+581d` → `invalid option -- 'j'` | `date` resolves to GNU coreutils on this machine; use `date -d '<date> + N days'` |
+| `ModuleNotFoundError: No module named 'yaml'` extracting the workflow step in Python | No PyYAML on this machine; parse with R `yaml::read_yaml()` instead |
+
+### Code-check round 3 (2026-09-12)
+It named the mechanism behind every earlier defect. Each was a claim checked on the path its author had in view, while a second path nobody ran also reached it:
+- the crash placeholder
+- the BC-filtered call
+- the live-after-retry branch
+- credentials used 90 min after they were fetched
+- `compact_only` dispatches
+- the plan-text copy of a code comment
+
+It walked 17 places the mechanism reaches. Three still bit, all in the test harness or notes, none in production code:
+- **T4 "NA not in ids" and T6 "no NA" passed on a crash**, because `anyNA(NULL)` is FALSE. Both T8 `expect_error` checks also passed on any error. Fixed: an `is.character()` guard on both checks, and `expect_error(expr, pattern)` now matches the guard's own message.
+- **`progress.md` attributed T7's stub failures to the NA id.** They come from the propagated connect error. Rewritten with measured per-section counts.
+- **The `REAL_TIME = NA` fixture row was said to guard `%in%` over `==`.** `clean()` drops the NA either way; with `==` restored the suite stays green. The comments in the test and in `snapshot-functions.R` now say the row pins the outcome, not the mechanism.
+
+**The loop was ended by enumeration, not by a fourth round.** All 31 checks were run against an implementation that always `stop()`s: **31/31 FAIL**, so no check can be satisfied by a crash.
+- The real implementation: 31/31 PASS.
+- The old one-shot behaviour: 26 FAIL (T2–T5 4/4 each, T7 5/5, T8 2/2, T1 1, T6 2).
+- Agents used for this task: the Plan review plus 3 code-check rounds, 4 in all.
