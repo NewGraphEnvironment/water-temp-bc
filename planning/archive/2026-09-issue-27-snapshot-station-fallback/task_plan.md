@@ -52,4 +52,4 @@ The script halts before any data is pulled, so upload and compaction are skipped
 - [x] Tests pass
 - [x] `/code-check` clean on each commit
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
