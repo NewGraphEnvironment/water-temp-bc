@@ -2290,7 +2290,7 @@ target answers a question nobody asked. Make the argument required, so omission 
 **error** rather than a fallback; where a default must stay, print the resolved decision at
 start-up with the alternative named.
 
-*28 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
+*30 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
 
 ### A fixture that cannot reach the failure mode
 
@@ -2515,7 +2515,9 @@ what disarms it. Where a guard compares against a vendored witness, add a curren
 gated on the source being present (skipped in CI, out loud) and stamp the date or upstream
 version beside the copy.
 
-For remedies: **run the remedy yourself, for every input the clause can receive.** Ask
+For remedies: **run the remedy yourself, for every input the clause can receive**, and
+check it finished the job rather than merely running — a remedy that repairs the subset it
+knows about reports success and leaves the rest. Ask
 what someone would *do* on reading the message, not whether the guard fired — a guard can
 fire correctly and point at the wrong fix. A remedy repeated across sibling messages is
 one claim written many times, so hold the sentence in a single internal constant, with a
@@ -2539,7 +2541,7 @@ several sources — a rule promoted out of its instances, a summary over a measu
 execute it against each source rather than against itself: the compression reads correct on
 its own, and the condition it dropped is visible only in the thing it compressed.
 
-*22 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
+*23 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
 
 ### A fix lands in one of two callers that share a harness
 
@@ -2602,7 +2604,9 @@ not a corroboration. A guard added mid-review is itself unguarded, and de-vacuum
 assertion moves other variants' counts, so re-measure the whole table against the final tree
 rather than carrying earlier rounds' numbers forward.
 
-*12 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
+**Before restoring anything, ask what would have to change for the predicate to be true.** Restoring the defect is the proof, but it costs a run; this costs a read, and it catches the case restoration was never going to reach — a guard whose two operands are *derived from each other*, so no caller can make them differ. That guard has no true branch at all, which is a different failure from one that can fire and does not. Its tell is that the comparison's inputs trace back to one source a few lines up. Relatedly, a minimum-sample floor must sit well clear of the group it protects: at the floor exactly, an order statistic still ignores the tail it was added to inspect.
+
+*14 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
 
 ### A shared working tree, and what generators leave in it
 
@@ -2847,9 +2851,11 @@ position. Order the layout-aware writer last, and assert the property (`cog_vali
 not the parse. Canonicalize before diffing, and name every field you mask. Put the same
 flags on any preview path, or the preview is not what gets written. Write the character,
 not the entity — then read the file back and grep for what should not be there, because
-a document that parses is not a document carrying its fields.
+a document that parses is not a document carrying its fields. And never rebuild structure
+by splitting a joined string whose separator can occur inside the parts: carry the
+structure from where it was built, or the split invents members that were never there.
 
-*8 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
+*9 recorded instances of this are in `conventions/code-check.md`, which `/code-check` reads in full.*
 
 ### One fact derived twice
 
@@ -4240,6 +4246,13 @@ mult pages to find"* (airvine, 2026-09-05).
   ```
 - **Cross-repo references carry the repo**: `rfp#268`, never a bare `#268` from inside
   soul.
+- **A bare `#N` is not ambiguous — it is a working link to the wrong repo.** The host
+  resolves it against the session's own repo, so a bare number in a discussion *about* a
+  different repo silently retargets. Measured 2026-09-12: an rfp review written from an rtj
+  session rendered `#329`, `#221`, `#203` and four others as rtj links, and rtj#329 — *"its
+  group is ticked by none, so it is invisible everywhere"* — is close enough in subject to
+  rfp#329 to read as correct. Naming the collision in prose afterwards does not fix it; the
+  link has to be re-qualified.
 - **Spot-check a subset, not every link.** Before sending a report with many numbers,
   resolve two or three through `gh` — the ones you typed from memory or whose type you
   inferred — and let the rest ride. Checking all of them would slow every message; checking
