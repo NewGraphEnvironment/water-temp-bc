@@ -20,15 +20,17 @@ Document and serve out BC water temperature data. Scrapes the Environment Canada
   - `sqlite_to_parquet.R`, `update-table-name.R` — one-time migration helpers
   - `sync-data.R` — `aws s3 sync data/ s3://water-temp-bc/data --delete`
   - `functions.R`, `utils.R`, `staticimports.R` — helpers used by `README.Rmd`
+  - `snapshot.R` — the monthly GHA pull (`.github/workflows/snapshot.yml`). Its station resolution lives in `snapshot-functions.R` and is contract-tested by `snapshot-test.R` (`Rscript scripts/snapshot-test.R`)
 - `data/` — published parquet files (mirrored to S3); also a stray `water-temp-bc.duckdb`
 - `data-raw/` — hex sticker assets
+- `research/` — settled facts that outlive their issue. `eccc-realtime-access.md` covers the ECCC hosts, timeouts and retries, the offline station list, and runner reachability samples
 
 ## Known state / modernization targets
 
 - **Realtime window is ~18 months** — to maintain a long record, the scrape must run on a schedule and append to a canonical parquet rather than producing dated snapshots.
 - **Multiple dated `realtime_raw_*.parquet` files in `data/`** (`20240119`, `20250728`, plus an ECCC historic `20221213`) — README flags "we will need to put them all together soon. TO DO." Consolidating these into a single canonical store is the central modernization task.
 - **README.Rmd hardcodes a parquet filename** (`realtime_raw_20250521.parquet`) in its query chunks — that file isn't currently in `data/`, so queries against the published page may be stale or broken. A canonical filename (e.g. `realtime_raw.parquet`) would fix this.
-- **Stations list** is currently union of `tidyhydat::realtime_stations('BC')` and an Excel of ECCC-forwarded station IDs (`data/eccc/BC_Stations_withTW.xlsx`).
+- **Stations list** is the union of `tidyhydat::realtime_stations('BC')` and an Excel of ECCC-forwarded station IDs (`data/eccc/BC_Stations_withTW.xlsx`). If the ECCC datamart can't be reached, the live half is retried, then replaced by the station table bundled with tidyhydat, `tidyhydat::allstations` (#27). A fallback run stays green with only a `::warning::`, and the bundled list is frozen at tidyhydat's build date.
 
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->
 
