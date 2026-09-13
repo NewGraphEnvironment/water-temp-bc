@@ -12,3 +12,16 @@
 - Reviews: a Plan agent review, then `/code-check` rounds 1–3 over the full Phase 1–3 diff. That was one review of the union rather than three per-phase loops, to stay within the agent budget; each commit's diff is a subset of what was reviewed. Round 3's inside-a-fix findings were closed by enumeration (31/31 checks fail against an always-crashing implementation), not by a fourth round. Triage is in `findings.md` (Reviews) and `review-round{1,2,3}.md`.
 - Phase 3: `snapshot.yml` gets the ECCC reachability probe as its first step, unconditional with `continue-on-error`; AWS credentials move to after Pull. Probe tested under the runner's `bash -eo pipefail` both ways (real hosts HTTP 200 exit 0; unroutable host UNREACHABLE exit 0).
 - Next: Phase 4. PR, then merge, then `gh workflow run snapshot.yml --ref main`.
+
+## Session 2026-09-13
+
+- Branch dispatch with `compact_only=true` (run 34734701063, 03:07 UTC). The probe reached both hosts (HTTP 200, connect ~0.04 s). AWS OIDC refused the branch as designed (`Not authorized … AssumeRoleWithWebIdentity`), so there were no S3 writes.
+- PR #29 merged (`05c21a3`); issue #27 body given a dated Status section before the merge.
+- Full run on `main` (run 34735036020, 03:15–04:06 UTC, green):
+  - probe reached both hosts
+  - live station list on attempt 1 (446 stations)
+  - 90,878,878 rows from 292 stations, 2025-02-09 → 2026-09-13
+  - `snapshot_2026-09-13/` uploaded (9 chunks)
+  - compaction moved the watermark from `snapshot_2026-07-01` to `snapshot_2026-09-13`
+  - Verified from S3 directly (anonymous GET of `canonical_meta.json`, anonymous list of the snapshot prefix), not just the log.
+- Phase 4 done; wrap-up PR closes #27.

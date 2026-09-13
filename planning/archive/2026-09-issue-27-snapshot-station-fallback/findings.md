@@ -152,3 +152,23 @@ It walked 17 places the mechanism reaches. Three still bit, all in the test harn
 - The real implementation: 31/31 PASS.
 - The old one-shot behaviour: 26 FAIL (T2–T5 4/4 each, T7 5/5, T8 2/2, T1 1, T6 2).
 - Agents used for this task: the Plan review plus 3 code-check rounds, 4 in all.
+
+## Phase 4: runner validation (2026-09-13)
+
+### Reachability from a GitHub runner
+
+| run | ref | UTC | `dd.weather.gc.ca` | `wateroffice.ec.gc.ca` |
+|---|---|---|---|---|
+| 34734701063 | branch, `compact_only` | 03:07 | 200, connect 0.045 s, tls 0.073 s | 200, connect 0.041 s, tls 0.071 s |
+| 34735036020 | `main`, full | 03:15 | 200, connect 0.042 s, tls 0.068 s | 200, connect 0.040 s, tls 0.071 s |
+
+**Not a permanent block.** Both Aug and Sep failures hit ~12:00 UTC on the 1st, and these samples are ~03:10 UTC mid-month. So "intermittent" and "tied to that slot" are both still possible. The 2026-10-01 scheduled run is the next sample, and a repeat would now retry and fall back rather than kill the run.
+
+### Full run on `main` (34735036020, 50 min, every step green)
+- Station list: live on attempt 1, 446 stations. No `::warning::` or `::notice::` was raised.
+- Pull: 03:19 → 03:59 (40 min). 90,878,878 rows, 292 distinct stations, 2025-02-09 → 2026-09-13 03:50. 154 stations returned "No data exists" (July: 156 of 448), and there were no other error kinds, so the webservice was healthy.
+- Upload: `data/realtime/2026/09/snapshot_2026-09-13/`, 9 chunks, 10 s.
+- Compact: 7 min. It merged `snapshot_2026-07-01` + `snapshot_2026-09-13`. Watermark → `snapshot_2026-09-13`; rows per parameter 5: 4,996,180; 6: 173,677; 46: 55,849,790; 47: 49,803,864; total 110,823,511 (bootstrap in #23 was 98,726,492).
+- AWS credentials were fetched at 03:59 and used until 04:06, well inside the 1 h session. Before the move they would have been fetched at 03:19 and needed until 04:06 (47 min): inside the limit this time, but close enough to justify the move.
+- Verified against S3 directly with no credentials: `canonical_meta.json` GET, and a list of the snapshot prefix. The anonymous list working also means the bucket's ListBucket policy gap noted in #23 has since been fixed.
+- The Jul–Sep gap is filled: the snapshot reaches back to 2025-02-09.

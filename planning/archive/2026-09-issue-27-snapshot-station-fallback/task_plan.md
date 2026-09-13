@@ -36,11 +36,11 @@ The script halts before any data is pulled, so upload and compaction are skipped
 - [x] `snapshot.yml`: move `configure-aws-credentials` to after Pull (plan review). The pull needs no AWS and can take 40–90 min, and the action's default session is 1 h, so credentials fetched first could expire before Upload/Compact. A side effect: a branch dispatch now runs the probe and the full pull before stopping at the main-only OIDC trust, with no S3 writes
 
 ## Phase 4: Validate on the real runner
-- [ ] PR + merge (Upload and Compact need the OIDC role, which trusts `main` only)
-- [ ] `gh workflow run snapshot.yml --ref main`; record the reachability numbers in `findings.md`
-- [ ] Pull step green; the log shows which station source was used; `snapshot_<date>/` lands in S3; compaction advances the `canonical_meta.json` watermark
-- [ ] Edit issue #27's body with the measured cause: blocked, slow, or "reachable on <date>". One probe can't show "transient"; the 2026-10-01 scheduled run is the second sample
-- [ ] Follow-ups:
+- [x] PR + merge (Upload and Compact need the OIDC role, which trusts `main` only). PR #29, merge `05c21a3`.
+- [x] `gh workflow run snapshot.yml --ref main`; record the reachability numbers in `findings.md`. Run 34735036020, after branch run 34734701063.
+- [x] Pull step green; the log shows which station source was used; `snapshot_<date>/` lands in S3; compaction advances the `canonical_meta.json` watermark. Live list on attempt 1, 446 stations; `snapshot_2026-09-13/` has 9 chunks; the watermark moved to `snapshot_2026-09-13` (110,823,511 rows).
+- [x] Edit issue #27's body with the measured cause: blocked, slow, or "reachable on <date>". One probe can't show "transient"; the 2026-10-01 scheduled run is the second sample. Recorded as reachable on 2026-09-13: two runner samples, both hosts, ~0.04 s connect.
+- [x] Follow-ups: none triggered. Both hosts were reachable, so neither a new egress nor a permanent station-list source is needed yet.
   - `wateroffice.ec.gc.ca` unreachable from the runner → a different egress is needed
   - `dd.weather.gc.ca` blocked but wateroffice fine → a permanent station-list source (the bundled list is frozen at tidyhydat's build and already lacks live `08DA013`, `08DB015`)
 - Reading that run:
@@ -52,4 +52,4 @@ The script halts before any data is pulled, so upload and compaction are skipped
 - [x] Tests pass
 - [x] `/code-check` clean on each commit
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/planning-archive` on completion
