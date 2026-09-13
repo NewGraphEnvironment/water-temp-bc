@@ -14,6 +14,15 @@
 # Stations are pulled in chunks so peak R memory stays well under the 7 GB
 # GHA runner ceiling. Each chunk is written + freed before the next starts.
 # Readers don't care about chunking; arrow::open_dataset() walks the tree.
+#
+# The station list comes from the ECCC datamart (dd.weather.gc.ca), which the
+# runner could not connect to in 2026-08 and 2026-09 (#27). It is retried, and
+# if it never answers, the station table bundled with tidyhydat stands in —
+# see scripts/snapshot-functions.R. A fallback run stays green and raises a
+# ::warning:: annotation on the run page. A warning sends no email, so a
+# datamart that stays unreachable shows only to someone who opens the run —
+# and the bundled list is frozen at tidyhydat's build (in 2026-09 it already
+# lacked two live stations). A fallback that persists wants its own issue.
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -22,14 +31,12 @@ suppressPackageStartupMessages({
   library(fs)
   library(tidyhydat)
 })
+source("scripts/snapshot-functions.R")
 
 now   <- Sys.time()
 today <- Sys.Date()
 
 # --- Stations ----------------------------------------------------------------
-stations_tidyhydat <- tidyhydat::realtime_stations(prov_terr_state_loc = "BC") |>
-  dplyr::pull(STATION_NUMBER)
-
 eccc_xlsx <- "data/eccc/BC_Stations_withTW.xlsx"
 stations_eccc <- if (fs::file_exists(eccc_xlsx)) {
   readxl::read_excel(eccc_xlsx) |> dplyr::pull(stationid)
@@ -38,8 +45,33 @@ stations_eccc <- if (fs::file_exists(eccc_xlsx)) {
   character(0)
 }
 
-stations <- unique(c(stations_tidyhydat, stations_eccc))
-message("Pulling realtime data for ", length(stations), " stations...")
+st <- snapshot_stations(
+  fetch_live = function() {
+    tidyhydat::realtime_stations(prov_terr_state_loc = "BC")$STATION_NUMBER
+  },
+  bundled  = tidyhydat::allstations,
+  eccc_ids = stations_eccc
+)
+# A workflow command must be one line: escape %, \r, \n per the GHA spec.
+gha_escape <- function(x) {
+  x <- gsub("%", "%25", x, fixed = TRUE)
+  x <- gsub("\r", "%0D", x, fixed = TRUE)
+  gsub("\n", "%0A", x, fixed = TRUE)
+}
+if (st$source == "fallback") {
+  cat("::warning title=Station list fallback::Live station list unavailable after ",
+      st$attempts, " attempts (", gha_escape(st$error), "); using tidyhydat::allstations\n",
+      sep = "")
+} else if (st$attempts > 1L) {
+  # Answered on a retry: the earlier failure is the evidence that ECCC was
+  # flaky rather than blocked, so keep it on the run page.
+  cat("::notice title=Station list retried::Live station list answered on attempt ",
+      st$attempts, " (earlier failure: ", gha_escape(st$error), ")\n", sep = "")
+}
+
+stations <- st$ids
+message("Pulling realtime data for ", length(stations), " stations (station list: ",
+        st$source, ", ", st$attempts, " attempt(s))...")
 
 # --- Pull + write in chunks --------------------------------------------------
 # 581 = current ngr default and the practical max ECCC realtime serves (~19mo).
