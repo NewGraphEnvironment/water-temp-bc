@@ -20,19 +20,29 @@
 #   4. Only after every partition succeeds, upload the new meta. A failure
 #      anywhere leaves the old meta in place, so the next run re-merges from
 #      the previous watermark and self-heals.
+#
+# The pre-2024-10 record (#19) is not a raw snapshot: scripts/historic-fold.R
+# merged it into canonical once, from data/historic/normalized/. A monthly
+# run carries it forward inside canonical; a bootstrap (no meta, so no
+# canonical to carry it) re-reads it from that prefix so a from-scratch
+# rebuild cannot silently drop it.
 
 suppressPackageStartupMessages({
   library(fs)
 })
 source("scripts/compact-functions.R")
+source("scripts/historic-functions.R")  # HISTORIC_FILES
 
 BUCKET       <- "s3://water-temp-bc"
 RAW_PREFIX   <- "data/realtime"
 CANON_PREFIX <- "data/canonical"
+HIST_PREFIX  <- "data/historic/normalized"
 META_KEY     <- "data/canonical_meta.json"
-# ECCC has served exactly these for BC stations since the archive began;
-# drift in either direction is worth a look but should not block the merge.
-PARAMS_EXPECTED <- c(5L, 6L, 46L, 47L)
+# ECCC has served 5, 6, 46 and 47 for BC stations since the realtime archive
+# began; 1 (air temperature) and 18 (precipitation) come only from the
+# folded-in 2022-06 -> 2024-01 historic pull (#19). Drift in either direction
+# is worth a look but should not block the merge.
+PARAMS_EXPECTED <- c(1L, 5L, 6L, 18L, 46L, 47L)
 
 WORK <- Sys.getenv("COMPACT_WORK_DIR", unset = fs::path(tempdir(), "compact-work"))
 MEMORY_LIMIT <- Sys.getenv("COMPACT_MEMORY_LIMIT", unset = "4GB")
@@ -50,6 +60,17 @@ aws <- function(...) {
 }
 
 # --- 1. Watermark from the last successful compact ---------------------------
+# Another writer (historic-fold.R) holds canonical/ — checked here and again
+# before every upload, so a fold that starts mid-run stops this one before
+# it overwrites the fold's partitions.
+stop_if_locked <- function() {
+  if (canonical_lock_present(aws)) {
+    stop(BUCKET, "/", CANONICAL_LOCK_KEY, " is present: another writer holds canonical/. ",
+         "If no fold is running, it is stale — delete it and re-run.", call. = FALSE)
+  }
+}
+stop_if_locked()
+
 meta_local <- fs::path(WORK, "canonical_meta.json")
 meta <- tryCatch({
   aws("s3", "cp", paste0(BUCKET, "/", META_KEY), meta_local, "--only-show-errors")
@@ -60,6 +81,26 @@ meta <- tryCatch({
   if (grepl("404|NoSuchKey|Not Found|does not exist", conditionMessage(e), ignore.case = TRUE)) NULL
   else stop(e)
 })
+# The meta as this run found it. Before every upload the live meta must still
+# match byte for byte: historic-fold.R rewrites it (rows, historic_merged) but
+# keeps completed_at, and a fold that ran start to finish while this run was
+# merging would otherwise be erased by the next --delete sync below, with
+# nothing afterwards to notice. (Absent at bootstrap: it must stay absent.)
+meta_seen <- if (!is.null(meta)) readLines(meta_local, warn = FALSE) else NULL
+stop_if_contended <- function() {
+  stop_if_locked()
+  now_local <- fs::path(WORK, "canonical_meta_now.json")
+  if (fs::file_exists(now_local)) fs::file_delete(now_local)
+  live <- if (canonical_lock_present(aws, key = META_KEY)) {
+    aws("s3", "cp", paste0(BUCKET, "/", META_KEY), now_local, "--only-show-errors")
+    readLines(now_local, warn = FALSE)
+  } else NULL
+  if (!identical(live, meta_seen)) {
+    stop(BUCKET, "/", META_KEY, " changed while this run was merging; another writer ",
+         "published to canonical/. Re-run to merge on top of it.", call. = FALSE)
+  }
+}
+
 watermark <- if (!is.null(meta)) as.Date(sub("^snapshot_", "", meta$last_merged)) else NULL
 message(if (is.null(meta)) "No canonical meta found — bootstrap over all raw snapshots."
         else paste0("Canonical watermark: ", meta$last_merged))
@@ -82,6 +123,25 @@ for (pfx in todo) {
   dest <- fs::path(raw_local, basename(pfx))
   aws("s3", "sync", paste0(BUCKET, "/", pfx), dest, "--only-show-errors")
   raw_dirs <- c(raw_dirs, dest)
+}
+
+historic_merged <- meta$historic_merged
+if (is.null(meta)) {
+  # Required, not optional: after the #19 fold, a bootstrap that ran without
+  # it would publish a canonical missing everything before 2024-10, and the
+  # row-count guard has no previous meta to catch that with. aws() stops on
+  # a missing prefix as well as on a network failure.
+  hist_listing <- aws("s3", "ls", paste0(BUCKET, "/", HIST_PREFIX, "/"))
+  hist_files <- sub("^.*[[:space:]]", "", grep("[.]parquet$", hist_listing, value = TRUE))
+  missing <- setdiff(HISTORIC_FILES, hist_files)
+  if (length(missing) > 0) {
+    stop("Bootstrap: ", HIST_PREFIX, " is missing ", paste(missing, collapse = ", "))
+  }
+  hist_local <- fs::path(WORK, "historic_normalized")
+  aws("s3", "sync", paste0(BUCKET, "/", HIST_PREFIX), hist_local, "--only-show-errors")
+  raw_dirs <- c(raw_dirs, hist_local)
+  historic_merged <- list(files = hist_files, source = paste0(BUCKET, "/", HIST_PREFIX))
+  message("Bootstrap: including the normalized historic record (", length(hist_files), " files).")
 }
 
 # --- 3. Parameters = raw params ∪ existing canonical partitions --------------
@@ -135,6 +195,7 @@ for (p in params_all) {
   if (length(prev_p) == 0 || is.na(prev_p)) prev_p <- 0
   compact_verify(out_p, prev_rows = prev_p)
 
+  stop_if_contended()
   aws("s3", "sync", "--delete",
       fs::path(out_p, sprintf("Parameter=%d", p)),
       paste0(BUCKET, "/", CANON_PREFIX, sprintf("/Parameter=%d/", p)),
@@ -156,7 +217,10 @@ new_meta <- list(
   total_rows   = sum(unlist(per_param)),
   completed_at = format(Sys.time(), tz = "UTC", "%Y-%m-%dT%H:%M:%SZ")
 )
+# Carried forward so the meta keeps saying canonical holds the historic fold.
+if (!is.null(historic_merged)) new_meta$historic_merged <- historic_merged
 jsonlite::write_json(new_meta, meta_local, auto_unbox = TRUE, pretty = TRUE)
+stop_if_contended()
 aws("s3", "cp", meta_local, paste0(BUCKET, "/", META_KEY), "--only-show-errors")
 
 message(

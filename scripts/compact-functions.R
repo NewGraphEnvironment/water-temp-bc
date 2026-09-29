@@ -28,6 +28,49 @@ compact_select_inputs <- function(dir_names, watermark_date = NULL) {
   dir_names[!is.na(d) & d >= as.Date(watermark_date)]
 }
 
+# Writers of canonical/ (compact.R monthly, historic-fold.R once) take
+# turns through one lock object. A compaction still in flight is invisible to
+# a meta comparison — meta is written last — and its --delete sync would
+# silently remove what another writer just published (#19 review r3).
+CANONICAL_LOCK_KEY <- "data/canonical.lock"
+
+# Is the lock object present? `aws` is the caller's aws-CLI wrapper, which
+# stops on a non-zero exit with the CLI's output in the message. Only a 404
+# means absent; anything else (403, network) stops, so the check cannot fail
+# toward "no lock".
+canonical_lock_present <- function(aws, bucket = "water-temp-bc",
+                                   key = CANONICAL_LOCK_KEY) {
+  tryCatch({
+    aws("s3api", "head-object", "--bucket", bucket, "--key", key)
+    TRUE
+  }, error = function(e) {
+    if (grepl("\\(404\\)|Not Found", conditionMessage(e))) FALSE
+    else stop("canonical lock check failed: ", conditionMessage(e), call. = FALSE)
+  })
+}
+
+# Assign stations to n_shards passes, largest first, each to the currently
+# lightest pass (LPT). `load` is a named numeric vector of per-station load.
+# The heaviest pass is then within 4/3 of the best possible split (Graham
+# 1969), itself at most the mean plus the largest single station, whatever
+# the station count, which a hash assignment cannot promise: its
+# max/mean ratio grows as fewer stations share a bucket (#19 review r3:
+# 2.5-3.9x at ~100 passes). Deterministic: ties go to the lower pass index,
+# stations of equal load are taken in name order. Returns a list of
+# character vectors, empty passes dropped.
+compact_pack_shards <- function(load, n_shards) {
+  n_shards <- max(1L, min(as.integer(n_shards), length(load)))
+  ord <- order(-load, names(load), method = "radix")
+  bins <- vector("list", n_shards)
+  tot <- numeric(n_shards)
+  for (i in ord) {
+    b <- which.min(tot)
+    bins[[b]] <- c(bins[[b]], names(load)[i])
+    tot[b] <- tot[b] + load[[i]]
+  }
+  Filter(length, bins)
+}
+
 # Merge raw snapshot dirs (Parameter as a double column) and, optionally, an
 # existing canonical store (Parameter as int in the hive path) into a fresh
 # canonical store at out_dir. `params` restricts processing to the given
@@ -36,6 +79,7 @@ compact_select_inputs <- function(dir_names, watermark_date = NULL) {
 compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
                         params = NULL, null_frac_max = 0.001,
                         row_group_size = 122880L, shard_rows = 6e6,
+                        shard_keys = 1.5e6,
                         memory_limit = NULL, temp_dir = NULL, threads = NULL) {
   if (length(snapshot_dirs) == 0) stop("compact_run: no snapshot dirs given")
   # File-backed connection, NOT in-memory: duckdb only offloads operator
@@ -106,28 +150,54 @@ compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
     # operator OOM'd an 8 GB limit on the real ~124M-row partition). But
     # arg_max's struct-payload aggregate state cannot spill to disk either
     # (observed: OOM with an empty temp_directory), so each partition is
-    # hash-sharded by STATION_NUMBER into passes small enough to hold in
-    # memory. A key never crosses shards, so dedup stays exact; each shard
+    # split by STATION_NUMBER into passes small enough to hold in memory
+    # (compact_pack_shards). A key never crosses shards, so dedup stays
+    # exact; each shard
     # writes its own internally-ordered part-<k>.parquet and per-file
     # row-group stats still prune station/date queries.
     # shard_rows = 6e6: 10e6 passed locally at the 4GB/2-thread profile but
     # OOM'd the real GHA runner (run 29675228557, partition 47) — local
     # physical-RAM headroom masks how tight duckdb's accounting runs at the
     # limit. Extra passes cost scan time only; state per pass is what OOMs.
-    n_p <- DBI::dbGetQuery(con, sprintf(
-      "SELECT count(*)::BIGINT AS n FROM inputs
+    # shard_keys: arg_max state grows with DISTINCT keys, not input rows.
+    # shard_rows alone was tuned on raw-heavy input (~2/3 duplicate rows);
+    # once canonical carries the folded historic record (#19) it is
+    # key-dense. What OOMs is the LARGEST pass, so stations are packed by
+    # load: max(keys / shard_keys, rows / shard_rows), which bounds the
+    # heaviest pass by ~1 unit plus the largest station (0.45M keys, p46).
+    # At 1.5e6 the post-fold p46 splits into 68 passes with the heaviest at
+    # 1.59M keys (measured), against 3.65M in the last run that passed on
+    # the runner and ~5.1M in the one that OOM'd.
+    st <- DBI::dbGetQuery(con, sprintf(
+      "SELECT coalesce(STATION_NUMBER, '') AS s, count(*)::BIGINT AS n,
+              approx_count_distinct(Date)::BIGINT AS k
+       FROM inputs
        WHERE Date IS NOT NULL AND Parameter IS NOT NULL
-         AND CAST(Parameter AS INTEGER) = %d", p))$n
-    n_shards <- max(1L, as.integer(ceiling(n_p / shard_rows)))
+         AND CAST(Parameter AS INTEGER) = %d
+       GROUP BY 1", p))
+    n_shards <- max(1L, as.integer(ceiling(sum(st$n) / shard_rows)),
+                    as.integer(ceiling(sum(st$k) / shard_keys)))
+    load <- stats::setNames(pmax(st$k / shard_keys, st$n / shard_rows), st$s)
+    passes <- if (n_shards > 1L) compact_pack_shards(load, n_shards) else list(NULL)
     n <- 0L
-    for (k in seq_len(n_shards) - 1L) {
-      shard_filter <- if (n_shards > 1L) {
-        sprintf("AND hash(STATION_NUMBER) %% %d = %d", n_shards, k)
-      } else ""
+    for (k in seq_along(passes) - 1L) {
+      stations <- passes[[k + 1L]]
+      # '' stands for a NULL STATION_NUMBER, which IN () would never match.
+      shard_filter <- if (is.null(stations)) "" else {
+        named <- stations[nzchar(stations)]
+        conds <- c(
+          if (length(named) > 0) sprintf("STATION_NUMBER IN (%s)",
+                                         paste(sprintf("'%s'", sql_q(named)), collapse = ", ")),
+          if (any(!nzchar(stations))) "STATION_NUMBER IS NULL")
+        sprintf("AND (%s)", paste(conds, collapse = " OR "))
+      }
       # arg_max keeps the whole row with the max (harvested_at, Value)
       # tuple: latest harvested_at wins, Value DESC NULLS LAST breaks
       # within-pull ties. Rows tying on both are interchangeable in
-      # practice (within-pull keys are unique in real snapshots).
+      # practice (within-pull keys are unique in real snapshots; in the
+      # historic files, 20250521's stale copies are removed by
+      # historic_normalize() before they get here, and eccc's 3,550
+      # duplicate keys are identical in every kept column — #19).
       n <- n + DBI::dbExecute(con, sprintf("
         COPY (
           WITH src AS (
@@ -162,8 +232,11 @@ compact_run <- function(snapshot_dirs, out_dir, canonical_dir = NULL,
 
 # Invariant gate: refuse to publish a canonical store that violates the
 # contract readers rely on. Stops with a specific message; TRUE otherwise.
+# The floor sits just below the folded-in historic record (#19), whose
+# earliest reading is 2002-04-30 (ECCC water temperature); it still catches a
+# Date parsed as epoch 0 or a two-digit year.
 compact_verify <- function(out_dir, prev_rows = 0,
-                           date_min_floor = as.POSIXct("2020-01-01", tz = "UTC"),
+                           date_min_floor = as.POSIXct("2002-01-01", tz = "UTC"),
                            date_max_ceiling = Sys.time() + 48 * 3600) {
   fail <- function(...) stop("compact_verify: ", sprintf(...), call. = FALSE)
   parts <- fs::dir_ls(out_dir, type = "directory")
