@@ -50,13 +50,14 @@ fpr::fpr_photo_resize_convert("fig/cover.png", path = "fig")
 
 <a href="https://github.com/NewGraphEnvironment/water-temp-bc" title="View source on GitHub"><img src="fig/cover.JPG" width="100%" alt="water-temp-bc" style="display: block; margin: auto;"/></a>
 
-Water temperature, discharge, and water level for ~290 BC hydrometric
+Water temperature, discharge, and water level for ~300 BC hydrometric
 stations, queryable straight from S3 — no database, nothing to download up
 front. A [monthly GitHub Actions cron](.github/workflows/snapshot.yml)
 re-pulls the full ~18-month window Environment Canada (ECCC) serves and
 compacts it into one deduplicated parquet dataset, so QC corrections
 automatically replace earlier provisional readings and the record keeps
-growing month over month.
+growing month over month. The same dataset carries the archive from before
+the cron began: water temperature back to 2002, daily discharge to 2016.
 
 <br>
 
@@ -83,17 +84,22 @@ across stations, latest reading per station).
 
 ## What's in it
 
-| `Parameter` | Name | Unit | Rows | Stations |
-|---|---|---|---|---|
-| `5` | Water temperature | °C | 4,474,827 | 291 |
-| `6` | Discharge (daily mean) | m³/s | 155,261 | 252 |
-| `46` | Water level (primary sensor) | m | 49,697,562 | 288 |
-| `47` | Discharge (primary sensor derived) | m³/s | 44,398,842 | 255 |
+| `Parameter` | Name | Unit | From | Rows | Stations |
+|---|---|---|---|---|---|
+| `5` | Water temperature | °C | 2002-04 | 17,292,881 | 306 |
+| `6` | Discharge (daily mean) | m³/s | 2015-12 | 571,092 | 264 |
+| `46` | Water level (primary sensor) | m | 2022-06 | 101,763,401 | 299 |
+| `47` | Discharge (primary sensor derived) | m³/s | 2022-06 | 91,806,298 | 262 |
+| `1` | Air temperature | °C | 2022-06 → 2024-01 only | 463,749 | 15 |
+| `18` | Precipitation | mm | 2022-06 → 2024-01 only | 301,487 | 9 |
 
-**For realtime discharge use `47`, not `6`** — `6` is one value per day;
-`5`, `46` and `47` are high-frequency sensor readings. Record starts
-2024-10 and grows monthly. Station locations and metadata live in
-`stations_realtime.parquet` (table below).
+Counts as of the 2026-09 compaction. **For realtime discharge use `47`, not
+`6`**: `6` is one value per day, while `5`, `46` and `47` are high-frequency
+sensor readings. Everything grows monthly except `1` and `18`, which came
+from one 2022–2024 pull and are frozen. With no `from`, `query_canonical()`
+returns the whole record, so filter by date when you want recent data only.
+Station locations and metadata live in `stations_realtime.parquet` (table
+below).
 
 <br>
 
@@ -103,7 +109,8 @@ across stations, latest reading per station).
 s3://water-temp-bc/data/
 ├── canonical/Parameter=<n>/part-*.parquet     # THE dataset — query this
 ├── realtime/<yyyy>/<mm>/snapshot_.../         # raw monthly pulls (provenance only)
-├── historic/realtime_raw_*.parquet            # frozen pre-2026 archive, odd schemas
+├── historic/realtime_raw_*.parquet            # frozen originals of the pre-2024-10 archive
+├── historic/normalized/*.parquet              # the same, normalized; already merged into canonical/
 └── stations_realtime.parquet                  # station metadata
 ```
 
@@ -112,6 +119,10 @@ s3://water-temp-bc/data/
   `arrow::open_dataset()` both read it directly.
 - `realtime/` keeps every raw overlapping pull; ~2/3 duplicate rows by
   design. Only useful if you need pre-correction history.
+- `historic/` holds four files pulled between 2022 and 2025, before the
+  monthly cron existed. They overlap each other and have mismatched
+  schemas; you don't need them, because `canonical/` already contains
+  their deduplicated content ([#19](https://github.com/NewGraphEnvironment/water-temp-bc/issues/19)).
 - Single files fetched by URL need the region, e.g.
   `https://water-temp-bc.s3.us-west-2.amazonaws.com/data/realtime/2026/06/snapshot_2026-06-01/chunk_001.parquet`
   (note: files under `canonical/` carry `Parameter` in the directory name,
@@ -119,6 +130,31 @@ s3://water-temp-bc/data/
   each month.
 
 <br>
+
+### The record before 2024-10
+
+Rows dated before the first monthly pull come from the historic files, and
+they carry older vocabularies. Details are in
+[`research/historic-archive.md`](research/historic-archive.md).
+
+- **`Approval`**: rows from ECCC's bulk dump (water temperature 2002–2022,
+  daily discharge 2015-12 → 2022-12) carry ECCC's codes `1`, `2` or `4`,
+  not `Provisional/Provisoire` / `Final/Finales`. Some 2022–2025 rows have
+  no `Approval` or `Grade` because the pull that carried them had dropped
+  those columns.
+- **`Symbol`**: only daily discharge from the bulk dump (2015-12 → 2022-12)
+  has flags, in ECCC's own codes (`ICE`, `ES`, `E`, `PX`, …). No other
+  row, current feed included, carries a `B` (ice) or `E` (estimate) flag,
+  so a missing flag does not mean open water.
+- **`harvested_at`** on these rows is the last `Date` in the file they came
+  from, a lower bound on when it was pulled.
+
+```r
+# daily discharge at Bulkley River near Houston, 2016 onward
+query_canonical(parameter = 6, stations = "08EE003", from = as.Date("2016-01-01")) |>
+  dplyr::select(Date, Value, Approval, Symbol) |>
+  dplyr::collect()
+```
 
 `r if (params$rmd_on == FALSE) "Please see http://www.newgraphenvironment.com/water-temp-bc for the published table of station details and a sample query."`
 

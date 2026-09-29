@@ -26,7 +26,9 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     # Local serial pull is ~40-90 min depending on ECCC responsiveness, plus
-    # ~10-20 min for the canonical compaction at 5-year scale.
+    # the canonical compaction: ~7 min before the #19 historic fold, an
+    # estimated ~30 min after it (p46/p47 at ~100 key-bounded shard passes
+    # each). Re-measure from the first post-fold run.
     timeout-minutes: 180
 
     steps:

@@ -10,6 +10,7 @@
 #     with snapshot_<date> >= watermark_date (inclusive); NULL watermark -> all
 #   compact_run(snapshot_dirs, out_dir, canonical_dir = NULL,
 #               null_frac_max = 0.001, row_group_size = 122880L,
+#               shard_rows = 6e6, shard_keys = 1.5e6,
 #               memory_limit = NULL, temp_dir = NULL) -> list(rows_written,
 #     rows_in, null_dropped, params)
 #     - dedup: latest harvested_at per (STATION_NUMBER, Parameter, Date),
@@ -17,8 +18,10 @@
 #     - drops NULL Date / NULL Parameter rows; errors if their fraction of
 #       input rows exceeds null_frac_max
 #     - output: hive dirs Parameter=<int>/part-<k>.parquet, zstd, each file
-#       ORDER BY STATION_NUMBER, Date; partitions hash-shard by station into
-#       ceiling(input_rows / shard_rows) files so aggregate state fits memory
+#       ORDER BY STATION_NUMBER, Date; partitions split by station into
+#       max(ceiling(input_rows / shard_rows), ceiling(distinct_keys /
+#       shard_keys)) files, stations bin-packed by load
+#       (compact_pack_shards) so the heaviest pass fits memory
 #     - canonical_dir (hive-partitioned, Parameter int32 in path) merges with
 #       raw snapshots (Parameter double column) transparently
 #   compact_verify(out_dir, prev_rows = 0, date_min_floor, date_max_ceiling)
@@ -254,6 +257,59 @@ check("each shard file internally ordered",
         x <- arrow::read_parquet(f, col_select = c("STATION_NUMBER", "Date"))
         identical(order(x$STATION_NUMBER, x$Date), seq_len(nrow(x)))
       }, logical(1))))
+
+# --- T8c: shards also bounded by distinct keys (#19) -------------------------
+# A key-dense input (every row a distinct key, as canonical is once it holds
+# the historic record) must shard on keys even when shard_rows would not.
+section("T8c sharding by distinct keys (shard_keys)")
+oK <- out_dir()
+compact_run(snapM, oK, shard_rows = 1e9, shard_keys = 2000, row_group_size = 2048L)
+fK <- fs::dir_ls(fs::path(oK, "Parameter=5"), glob = "*.parquet")
+check("key-dense input splits into >= 2 shards though shard_rows would not",
+      length(fK) >= 2)
+check("key-sharded content equals unsharded content",
+      same_content(read_canonical(oK), read_canonical(oM)))
+
+# --- T8d: station bin-packing bounds the heaviest pass -----------------------
+section("T8d compact_pack_shards (LPT)")
+# Skewed loads: one big station and many small ones, the shape that makes
+# hash assignment's max/mean ratio grow.
+set.seed(19)
+ld_even <- stats::setNames(stats::runif(300, 1, 12), sprintf("ST%03d", 1:300))
+pk_even <- compact_pack_shards(ld_even, 100L)
+# LPT's guarantee (Graham 1969): heaviest <= 4/3 of the optimum, and the
+# optimum is at least max(mean, largest station). Position- or hash-based
+# assignment breaks this bound on the same loads.
+lpt_bound <- function(l, np) 4 / 3 * max(sum(l) / np, max(l)) + 1e-9
+check("100 passes, no giant station: heaviest within LPT's 4/3 bound",
+      max(vapply(pk_even, function(x) sum(ld_even[x]), 0)) <= lpt_bound(ld_even, 100))
+ld <- stats::setNames(c(45, stats::runif(299, 1, 12)), sprintf("ST%03d", 1:300))
+for (nb in c(10L, 50L, 100L, 150L)) {
+  pk <- compact_pack_shards(ld, nb)
+  tot <- vapply(pk, function(x) sum(ld[x]), 0)
+  check(sprintf("%d passes: heaviest within LPT's 4/3 bound", nb),
+        max(tot) <= lpt_bound(ld, nb))
+  check(sprintf("%d passes: every station exactly once", nb),
+        setequal(unlist(pk), names(ld)) && length(unlist(pk)) == length(ld))
+}
+check("deterministic", identical(compact_pack_shards(ld, 50L), compact_pack_shards(ld, 50L)))
+check("more passes than stations collapses to one station per pass",
+      length(compact_pack_shards(ld[1:3], 10L)) == 3)
+
+# --- T8e: canonical lock check fails closed ---------------------------------
+section("T8e canonical_lock_present (only a 404 means absent)")
+aws_ok  <- function(...) "{}"
+aws_404 <- function(...) stop("aws s3api head-object failed (exit 254):\n",
+  "An error occurred (404) when calling the HeadObject operation: Not Found")
+aws_403 <- function(...) stop("aws s3api head-object failed (exit 254):\n",
+  "An error occurred (403) when calling the HeadObject operation: Forbidden")
+aws_net <- function(...) stop("aws s3api head-object failed (exit 255):\n",
+  "Could not connect to the endpoint URL")
+check("object present -> TRUE", isTRUE(canonical_lock_present(aws_ok)))
+check("404 -> FALSE", identical(canonical_lock_present(aws_404), FALSE))
+check("403 stops rather than reading as unlocked", expect_error(canonical_lock_present(aws_403)))
+check("network failure stops rather than reading as unlocked",
+      expect_error(canonical_lock_present(aws_net)))
 
 # --- T9: invariant gate ------------------------------------------------------
 section("T9 compact_verify invariants")

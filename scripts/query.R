@@ -22,18 +22,22 @@
 #        duplicates — query these only if you need pre-correction history.
 #
 #   s3://water-temp-bc/data/historic/realtime_raw_*.parquet
-#     -- frozen pre-modernization archive. Heterogeneous schemas — read
-#        individual files only, with awareness of their columns/types. See
-#        the open follow-up issue for normalization plans.
+#     -- frozen originals of the pre-2024-10 archive (four overlapping pulls,
+#        mismatched schemas). Normalized copies in historic/normalized/ were
+#        merged into canonical/ (#19), so canonical already holds this record;
+#        research/historic-archive.md describes the files.
 #
-# Parameters — the complete set (canonical-store counts, 2026-07-18):
-#   5  = Water temperature                  (°C,   4,474,827 rows, 291+ stations)
-#   6  = Discharge (daily mean)             (m3/s,   155,261 rows, 252+ stations)
-#   46 = Water level (primary sensor)       (m,   49,697,562 rows, 288+ stations)
-#   47 = Discharge (primary sensor derived) (m3/s, 44,398,842 rows, 255+ stations)
+# Parameters — the complete set (canonical-store counts after the #19 fold):
+#   5  = Water temperature                  (°C,  from 2002-04, 17,292,881 rows, 306 stations)
+#   6  = Discharge (daily mean)             (m3/s, from 2015-12,    571,092 rows, 264 stations)
+#   46 = Water level (primary sensor)       (m,   from 2022-06, 101,763,401 rows, 299 stations)
+#   47 = Discharge (primary sensor derived) (m3/s, from 2022-06, 91,806,298 rows, 262 stations)
+#   1  = Air temperature                    (°C,  2022-06 -> 2024-01 only, 15 stations)
+#   18 = Precipitation                      (mm,  2022-06 -> 2024-01 only,  9 stations)
 #
 # 6 is a daily-mean series (one value per day); 5, 46 and 47 are high-frequency
-# sensor readings. For REALTIME DISCHARGE use 47, not 6.
+# sensor readings. For REALTIME DISCHARGE use 47, not 6. Rows before 2024-10
+# use older vocabularies (Approval codes 1/2/4, ECCC Symbol codes such as ICE).
 
 suppressPackageStartupMessages({
   library(arrow)
@@ -88,14 +92,18 @@ latest_per_station <- query_canonical(parameter = 5) |>
   dplyr::collect()
 
 # ----------------------------------------------------------------------------
-# Example 4 — Reading from a single historic file directly
+# Example 4 — The long record: daily discharge from 2016
 # ----------------------------------------------------------------------------
-# Historic files predate the modernization and have heterogeneous schemas
-# (some have Parameter as string, some as double; Date types vary, etc.).
-# Read one file at a time and cast explicitly:
+# canonical/ also holds the pre-2024-10 archive (#19), so the same helper
+# reaches back to 2016 for daily discharge and 2002 for water temperature.
+# Those older rows carry ECCC's Approval codes (1/2/4) and, for 2015-12 to
+# 2022-12 daily discharge only, ECCC Symbol flags such as ICE.
 
-historic_one <- arrow::read_parquet(
-  "s3://water-temp-bc/data/historic/realtime_raw_20250521.parquet"
+q_long <- query_canonical(
+  parameter = 6,
+  stations  = "08EE003",
+  from      = as.Date("2016-01-01")
 ) |>
-  dplyr::filter(as.numeric(Parameter) == 5) |>
-  dplyr::mutate(Value = as.numeric(Value))
+  dplyr::select(STATION_NUMBER, Date, Value, Approval, Symbol) |>
+  dplyr::arrange(Date) |>
+  dplyr::collect()
