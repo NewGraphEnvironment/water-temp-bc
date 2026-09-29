@@ -57,3 +57,6 @@ data/*
 data/eccc/*
 !data/eccc/BC_Stations_withTW.xlsx
 README.html
+
+# historic-fold.R working files (#19)
+work/

@@ -9,6 +9,12 @@
 #
 # The dry run downloads, normalizes, merges and verifies every partition
 # locally and uploads NOTHING. Publish repeats the same work and uploads.
+# Check either result with scripts/historic-fold-check.R:
+#
+#   Rscript scripts/historic-fold-check.R work/historic-fold/folded work/historic-fold/historic_normalized work/historic-fold/canonical_meta_before.json
+#   Rscript scripts/historic-fold-check.R s3://water-temp-bc/data/canonical s3://water-temp-bc/data/historic/normalized
+#
+# Logs of the 2026-09 runs: data-raw/logs/historic_fold/.
 #
 # Flow:
 #   1. Download the four frozen originals from data/historic/ (never
@@ -59,10 +65,11 @@ EXCLUDE      <- list(realtime_raw_20250521.parquet = c("realtime_raw_eccc_202212
                                                        "realtime_raw_20240119.parquet"))
 
 PUBLISH      <- identical(Sys.getenv("HISTORIC_FOLD_PUBLISH"), "1")
-# Not inside tempdir(): R deletes that on exit, taking the report, the
-# would-be meta and the 2 GB of downloaded originals a re-run would reuse.
-WORK         <- Sys.getenv("HISTORIC_WORK_DIR",
-                           unset = fs::path(dirname(tempdir()), "water-temp-bc-historic-fold"))
+# In the repo (gitignored work/), not a temp dir: the downloaded originals,
+# the report, the metas and a dry run's store must survive a reboot so a
+# re-run reuses them and scripts/historic-fold-check.R can read the store.
+# Not under data/, which scripts/sync-data.R mirrors to S3 (#32).
+WORK         <- Sys.getenv("HISTORIC_WORK_DIR", unset = "work/historic-fold")
 MEMORY_LIMIT <- Sys.getenv("COMPACT_MEMORY_LIMIT", unset = "4GB")
 fs::dir_create(WORK, recurse = TRUE)
 message(if (PUBLISH) "PUBLISH run — canonical on S3 will be rewritten."
@@ -84,7 +91,15 @@ aws <- function(...) {
 meta_local <- fs::path(WORK, "canonical_meta.json")
 aws("s3", "cp", paste0(BUCKET, "/", META_KEY), meta_local, "--only-show-errors")
 meta <- jsonlite::read_json(meta_local)
+# Kept apart from meta_local, which step 5 overwrites with the new meta.
+fs::file_copy(meta_local, fs::path(WORK, "canonical_meta_before.json"), overwrite = TRUE)
 if (!is.null(meta$historic_merged)) {
+  # A folded meta's `rows` already include the historic rows, so they cannot
+  # stand in for the pre-fold counts historic-fold-check.R compares against.
+  if (length(meta$historic_merged$rows_before) == 0) {
+    stop("meta records a historic fold without rows_before; re-folding would lose the ",
+         "pre-fold counts. Restore rows_before from the pre-fold meta (bucket versioning) first.")
+  }
   message("NOTE: meta already records a historic fold (", meta$historic_merged$folded_at,
           ") — re-folding, which is a dedup no-op for rows already merged.")
 }
@@ -128,9 +143,8 @@ for (f in HIST_FILES) {
 # pull order and all precede the first monthly snapshot.
 hv <- vapply(norm, function(x) as.numeric(x$harvested_at), 0)
 if (is.unsorted(hv, strictly = TRUE)) stop("historic harvested_at values are not in pull order")
-first_snapshot <- as.POSIXct("2026-05-14", tz = "UTC")
-if (max(hv) >= as.numeric(first_snapshot)) {
-  stop("a historic harvested_at is on or after the first snapshot (", first_snapshot, ")")
+if (max(hv) >= as.numeric(FIRST_SNAPSHOT)) {
+  stop("a historic harvested_at is on or after the first snapshot (", FIRST_SNAPSHOT, ")")
 }
 
 # --- 3. Parameters = normalized ∪ canonical ----------------------------------
@@ -258,6 +272,14 @@ new_meta <- meta
 new_meta$rows       <- per_param
 new_meta$total_rows <- sum(unlist(per_param))
 new_meta$historic_merged <- list(
+  # Per-parameter canonical rows before the fold. historic-fold-check.R
+  # asserts that snapshot-harvested rows never fall below these, i.e. that
+  # the fold kept every canonical row and canonical won every overlap.
+  rows_before = if (is.null(meta$historic_merged)) meta$rows else meta$historic_merged$rows_before,
+  # The watermark the fold ran at. While meta$last_merged still equals it,
+  # snapshot-harvested rows must equal rows_before exactly.
+  at_last_merged = if (is.null(meta$historic_merged)) meta$last_merged
+                   else meta$historic_merged$at_last_merged,
   files     = HIST_FILES,
   source    = paste0(BUCKET, "/", HIST_PREFIX),
   folded_at = format(Sys.time(), tz = "UTC", "%Y-%m-%dT%H:%M:%SZ")

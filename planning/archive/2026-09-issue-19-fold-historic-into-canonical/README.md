@@ -41,11 +41,11 @@ Also found: no store carries HYDAT-style B/E flags (only ECCC `ICE` etc., 2015-1
 
 ## Evidence
 
-Dry-run logs and the kept store were in the session scratchpad and are not committed; the numbers above and in findings.md are their record.
+`data-raw/logs/historic_fold/20260929_*`: both dry runs, the runner-profile monthly simulation, and `scripts/historic-fold-check.R` run against the kept dry-run store (all pass) and against live S3 before the publish (fails as an unfolded store should; its per-parameter missing-key counts equal the dry run's added rows). They were committed in a follow-up PR after first being left in the session scratchpad.
 
 ## Post-merge (tracked in the #19 "Done when")
 
-1. From `main`, clear of the 1st-of-month cron: `HISTORIC_FOLD_PUBLISH=1 Rscript scripts/historic-fold.R`.
+1. From `main`, clear of the 1st-of-month cron: `HISTORIC_FOLD_PUBLISH=1 Rscript scripts/historic-fold.R`, then `Rscript scripts/historic-fold-check.R s3://water-temp-bc/data/canonical s3://water-temp-bc/data/historic/normalized`.
 2. Dispatch `snapshot.yml` with `compact_only=true` and watch memory and time on the runner.
 3. Re-render `index.html` with `update_query = TRUE`.
 

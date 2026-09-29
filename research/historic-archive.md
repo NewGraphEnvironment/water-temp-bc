@@ -1,6 +1,6 @@
 # The pre-2024-10 historic archive
 
-**Verified:** 2026-09-29 · **Issues:** #19 (fold into canonical), #17 (where the files came from), NewGraphEnvironment/wet#25 (consumer) · **Produced by:** duckdb/httpfs scans of `s3://water-temp-bc/data/historic/*.parquet` and `canonical/`, plus `scripts/historic-fold.R`
+**Verified:** 2026-09-29 · **Issues:** #19 (fold into canonical), #17 (where the files came from), NewGraphEnvironment/wet#25 (consumer) · **Produced by:** duckdb/httpfs scans of `s3://water-temp-bc/data/historic/*.parquet` and `canonical/`, plus `scripts/historic-fold.R` and `scripts/historic-fold-check.R` (logs: `data-raw/logs/historic_fold/`)
 
 Four parquet files from before the modernization live under `data/historic/`. They are frozen: #19 normalized copies of them (`data/historic/normalized/`) and merged those copies into `canonical/`, so `query_canonical()` now serves them. The originals are never rewritten.
 

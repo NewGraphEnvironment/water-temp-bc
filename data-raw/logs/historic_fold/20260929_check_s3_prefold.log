@@ -1,0 +1,59 @@
+[1] 0
+[1] 0
+store:      s3://water-temp-bc/data/canonical
+normalized: <work>/historic_normalized
+
+== rows and keys per parameter
+  p     rows     keys      first       last
+  5  4996180  4996180 2024-10-10 2026-09-13
+  6   173677   173677 2024-10-10 2026-09-12
+ 46 55849790 55849790 2024-10-10 2026-09-13
+ 47 49803864 49803864 2024-10-10 2026-09-13
+  PASS: no duplicate (STATION_NUMBER, Parameter, Date)
+  FAIL: earliest Date is 2002-04-30 (ECCC water temperature)
+
+== historic keys present in the store
+  FAIL: every normalized historic key is in the store
+  p  missing
+  1   463749
+ 46 45913611
+  6   397415
+  5 12296701
+ 47 42002434
+ 18   301487
+
+== canonical rows kept, and canonical won every overlap
+  FAIL: pre-fold row counts available (non-empty, numeric)
+  p from_snapshots before
+  5        4996180      0
+  6         173677      0
+ 46       55849790      0
+ 47       49803864      0
+  (store has merged snapshots since the fold: comparing with >=)
+  FAIL: rows from snapshots >= pre-fold canonical rows, every parameter
+  FAIL: every pre-fold parameter still present
+
+== vocabularies
+  FAIL: ICE rows (0) == distinct eccc ICE keys (807)
+  PASS: no Grade -1
+  PASS: no NULL Unit
+  PASS: no NULL Date
+               Approval        n
+ Provisional/Provisoire 61814884
+          Final/Finales 49008627
+
+== daily discharge: one row per station per UTC date
+  PASS: p6 station-days with more than one row: 0
+
+== schema and arrow read-back
+  PASS: one schema across 49 files
+  PASS: p5: arrow collects a row, Date tz UTC
+  PASS: p6: arrow collects a row, Date tz UTC
+  PASS: p46: arrow collects a row, Date tz UTC
+  PASS: p47: arrow collects a row, Date tz UTC
+
+== canonical_meta.json
+  PASS: rows per parameter == meta$rows
+  FAIL: meta records the historic fold
+
+CHECKS FAILED — 7 failure(s)
