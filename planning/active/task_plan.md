@@ -32,10 +32,12 @@ Review-driven additions (review-plan.md, review-round1..4.md), all landed:
 - [ ] Verify against S3 anonymously: `query_canonical(parameter = 6, stations = "08EE003")` spans 2016 → 2026-09 with no duplicate keys, and `open_dataset("…/canonical/")` unifies with no errors
 
 ## Phase 4: Docs
-- [ ] `README.Rmd`: update the "What's in it" counts and per-parameter start dates, change the layout block so `historic/` reads as originals plus `normalized/`, and add a "Record before 2024-10" subsection covering the Approval `1/2/4` codes, the Symbol vocabulary and missing B/E flags, the historic `harvested_at` meaning, and 20250521's NULL metadata. Then render `README.md` and `index.html`
-- [ ] `scripts/query.R`: update the header layout and param counts, and replace Example 4 (historic single-file read) with a pre-2024 `query_canonical()` example
-- [ ] Update the `query-helpers.R` header comment and the `CLAUDE.md` "Known state" bullets, which still describe dated files as the TODO
-- [ ] Write `research/historic-archive.md` with the schemas, the tz proof, the overlap and revision measurements and the Symbol vocabulary, and add a row to `research/README.md`
+- [x] (README.md rendered; **index.html re-render with `update_query = TRUE` is post-publish**, since `data/result.rds` must be rebuilt from the folded store) `README.Rmd`: update the "What's in it" counts and per-parameter start dates, change the layout block so `historic/` reads as originals plus `normalized/`, and add a "Record before 2024-10" subsection covering the Approval `1/2/4` codes, the Symbol vocabulary and missing B/E flags, the historic `harvested_at` meaning, and 20250521's NULL metadata. Then render `README.md` and `index.html`
+- [x] `scripts/query.R`: update the header layout and param counts, and replace Example 4 (historic single-file read) with a pre-2024 `query_canonical()` example
+- [x] Update the `query-helpers.R` header comment and the `CLAUDE.md` "Known state" bullets, which still describe dated files as the TODO
+- [x] Write `research/historic-archive.md` with the schemas, the tz proof, the overlap and revision measurements and the Symbol vocabulary, and add a row to `research/README.md`
+
+Also: `snapshot.yml` runtime comment; `CLAUDE.md` layout/known-state; `scripts/functions.R` top-level debug read guarded with `if (FALSE)` (it read a machine-local CSV at source time, which broke the render on any machine without it).
 
 ## Phase 5: Issue bodies
 - [ ] Edit the #19 body: rewrite "Done when" for the fold-in, correct the Symbol/B-flag claim, and link the research file

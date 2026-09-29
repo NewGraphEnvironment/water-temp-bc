@@ -52,7 +52,11 @@ eccc_csv_extract <- function(path){
   d
 }
 
+# Scratch check from building the ECCC dump; README.Rmd sources this file, so
+# it must not read a machine-local CSV at source time.
+if (FALSE) {
 a <- eccc_csv_extract(path = "/Users/airvine/Projects/repo/water-temp-bc/data/eccc/QR_ProvisionalDailyValues_20151231_to_20221216/ts2_07EA005_20221216T150334.csv")
 
 # this one is a problem - number stored as text?
 path = "/Users/airvine/Projects/repo/water-temp-bc/data/eccc/QR_ProvisionalDailyValues_20151231_to_20221216/ts2_07EA005_20221216T150334.csv"
+}

@@ -18,18 +18,21 @@ Document and serve out BC water temperature data. Scrapes the Environment Canada
   - `extract-eccc.R` — wrangles the bulk historic ECCC dump into parquet
   - `extract_stations.R` — builds `data/stations_realtime.parquet`
   - `sqlite_to_parquet.R`, `update-table-name.R` — one-time migration helpers
-  - `sync-data.R` — `aws s3 sync data/ s3://water-temp-bc/data --delete`
+  - `sync-data.R` — `aws s3 sync data/ s3://water-temp-bc/data --delete`. Do not run it from a fresh clone: `canonical/`, `realtime/` and `historic/` exist only on S3 (#32)
   - `functions.R`, `utils.R`, `staticimports.R` — helpers used by `README.Rmd`
   - `snapshot.R` — the monthly GHA pull (`.github/workflows/snapshot.yml`). Its station resolution lives in `snapshot-functions.R` and is contract-tested by `snapshot-test.R` (`Rscript scripts/snapshot-test.R`)
+  - `compact.R` — the monthly dedup of raw snapshots into `canonical/` (#23). Its core is `compact-functions.R`, contract-tested by `compact-test.R`
+  - `historic-fold.R` — the one-time fold of the four pre-2024-10 files into `canonical/` (#19). Its core is `historic-functions.R`, contract-tested by `historic-test.R`
+  - `query-helpers.R` (`query_canonical()`) and `query.R` — the read side
 - `data/` — published parquet files (mirrored to S3); also a stray `water-temp-bc.duckdb`
 - `data-raw/` — hex sticker assets
-- `research/` — settled facts that outlive their issue. `eccc-realtime-access.md` covers the ECCC hosts, timeouts and retries, the offline station list, and runner reachability samples
+- `research/` — settled facts that outlive their issue. `eccc-realtime-access.md` covers the ECCC hosts, timeouts and retries, the offline station list, and runner reachability samples. `historic-archive.md` covers the four pre-2024-10 files: schemas, time zone, overlaps, and vocabularies
 
 ## Known state / modernization targets
 
-- **Realtime window is ~18 months** — to maintain a long record, the scrape must run on a schedule and append to a canonical parquet rather than producing dated snapshots.
-- **Multiple dated `realtime_raw_*.parquet` files in `data/`** (`20240119`, `20250728`, plus an ECCC historic `20221213`) — README flags "we will need to put them all together soon. TO DO." Consolidating these into a single canonical store is the central modernization task.
-- **README.Rmd hardcodes a parquet filename** (`realtime_raw_20250521.parquet`) in its query chunks — that file isn't currently in `data/`, so queries against the published page may be stale or broken. A canonical filename (e.g. `realtime_raw.parquet`) would fix this.
+- **Realtime window is ~18 months** — the monthly snapshot plus compaction (#23) keeps the record growing in `s3://water-temp-bc/data/canonical/`, one deduplicated store partitioned by `Parameter`.
+- **The four dated pre-modernization files** (`historic/realtime_raw_*.parquet`, 2002 → 2025-07) are frozen originals. #19 normalized copies of them into `historic/normalized/` and merged those into `canonical/`. `compact.R`'s bootstrap re-reads that prefix, so it must not be deleted.
+- **Historic rows carry older vocabularies**: ECCC `Approval` codes `1/2/4`, ECCC `Symbol` codes (`ICE`, `ES`, …) on 2015-12 → 2022-12 daily discharge only, and no `B`/`E` flags anywhere (`research/historic-archive.md`).
 - **Stations list** is the union of `tidyhydat::realtime_stations('BC')` and an Excel of ECCC-forwarded station IDs (`data/eccc/BC_Stations_withTW.xlsx`). If the ECCC datamart can't be reached, the live half is retried, then replaced by the station table bundled with tidyhydat, `tidyhydat::allstations` (#27). A fallback run stays green with only a `::warning::`, and the bundled list is frozen at tidyhydat's build date.
 
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->

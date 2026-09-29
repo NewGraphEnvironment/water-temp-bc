@@ -14,6 +14,11 @@
 # of the dataset. Raw overlapping snapshots remain under data/realtime/ for
 # provenance — query those only if you need pre-correction history.
 #
+# The store also holds the pre-2024-10 archive (#19): water temperature from
+# 2002, daily discharge from 2016, sensor level and discharge from 2022-06.
+# Those rows carry older vocabularies (Approval codes 1/2/4, ECCC Symbol
+# codes such as ICE) — see research/historic-archive.md.
+#
 # query_canonical() returns a lazy dplyr query — call `collect()` yourself
 # when you want the data in memory.
 
