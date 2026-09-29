@@ -1,0 +1,8 @@
+p46: 303,077,786 rows in -> 101,763,401 written, 72 shard files, 126 s
+p47: 303,077,786 rows in -> 91,806,298 written, 65 shard files, 114 s
+
+real	3m59.952s
+user	7m23.863s
+sys	0m43.613s
+
+[exited with code 0]

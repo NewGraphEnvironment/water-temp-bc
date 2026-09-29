@@ -21,6 +21,12 @@ suppressPackageStartupMessages({
 
 if (!exists("sql_q")) sql_q <- function(x) gsub("'", "''", x)
 
+# harvested_at of the first monthly snapshot's rows is 2026-05-14 21:06 UTC.
+# Every historic harvested_at must precede it (the fold asserts so), which
+# makes harvested_at >= this date mark exactly the rows that came from
+# snapshots — scripts/historic-fold-check.R counts on that.
+FIRST_SNAPSHOT <- as.POSIXct("2026-05-14", tz = "UTC")
+
 # The four frozen originals under data/historic/, oldest pull first. The
 # normalized copies under data/historic/normalized/ carry the same names.
 HISTORIC_FILES <- c(

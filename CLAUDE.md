@@ -22,7 +22,7 @@ Document and serve out BC water temperature data. Scrapes the Environment Canada
   - `functions.R`, `utils.R`, `staticimports.R` — helpers used by `README.Rmd`
   - `snapshot.R` — the monthly GHA pull (`.github/workflows/snapshot.yml`). Its station resolution lives in `snapshot-functions.R` and is contract-tested by `snapshot-test.R` (`Rscript scripts/snapshot-test.R`)
   - `compact.R` — the monthly dedup of raw snapshots into `canonical/` (#23). Its core is `compact-functions.R`, contract-tested by `compact-test.R`
-  - `historic-fold.R` — the one-time fold of the four pre-2024-10 files into `canonical/` (#19). Its core is `historic-functions.R`, contract-tested by `historic-test.R`
+  - `historic-fold.R` — the one-time fold of the four pre-2024-10 files into `canonical/` (#19). Its core is `historic-functions.R`, contract-tested by `historic-test.R`; `historic-fold-check.R` verifies a folded store, local or on S3. Run logs: `data-raw/logs/historic_fold/`
   - `query-helpers.R` (`query_canonical()`) and `query.R` — the read side
 - `data/` — published parquet files (mirrored to S3); also a stray `water-temp-bc.duckdb`
 - `data-raw/` — hex sticker assets

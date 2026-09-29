@@ -1,0 +1,32 @@
+Tue Sep 29 05:50:12 UTC 2026
+DRY RUN — nothing will be uploaded. Set HISTORIC_FOLD_PUBLISH=1 to publish.
+Work dir: <work>
+character(0)
+normalized realtime_raw_eccc_20221213.parquet: 10,003,753 rows, harvested_at 2022-12-16 08:00:00 (1 s)
+normalized realtime_raw_20240119.parquet: 42,591,766 rows, harvested_at 2024-01-19 23:55:00 (4 s)
+normalized realtime_raw_20250521.parquet: 82,027,048 rows, harvested_at 2025-05-21 21:15:00 (10 s)
+normalized realtime_raw_20250728.parquet: 88,963,735 rows, harvested_at 2025-07-28 07:25:00 (14 s)
+Parameters: 1, 5, 6, 18, 46, 47
+Parameter 1: 0 -> 463,749 rows (2022-06-17 to 2024-01-19)
+Parameter 5: 4,996,180 -> 17,292,881 rows (2002-04-30 to 2026-09-13)
+Parameter 6: 173,677 -> 571,092 rows (2015-12-31 to 2026-09-12)
+Parameter 18: 0 -> 301,487 rows (2022-06-17 to 2024-01-19)
+Parameter 46: 55,849,790 -> 101,763,401 rows (2022-06-17 to 2026-09-13)
+Parameter 47: 49,803,864 -> 91,806,298 rows (2022-06-17 to 2026-09-13)
+ Parameter rows_before   rows_in rows_after    added null_dropped   min_date
+         1           0 223586302     463749   463749            0 2022-06-17
+         5     4996180 228582482   17292881 12296701            0 2002-04-30
+         6      173677 223759979     571092   397415            0 2015-12-31
+        18           0 223586302     301487   301487            0 2022-06-17
+        46    55849790 279436092  101763401 45913611            0 2022-06-17
+        47    49803864 273390166   91806298 42002434            0 2022-06-17
+   max_date stations secs
+ 2024-01-19       15    2
+ 2026-09-13      306   26
+ 2026-09-12      264    3
+ 2024-01-19        9    2
+ 2026-09-13      299  171
+ 2026-09-13      262  177
+Dry run complete — would-be meta at <work>/canonical_meta.json; folded store at <work>/folded
+exit 0
+Tue Sep 29 05:57:04 UTC 2026
