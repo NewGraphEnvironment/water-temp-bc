@@ -29,7 +29,7 @@ Review-driven additions (review-plan.md, review-round1..4.md), all landed:
 ## Phase 3: Fold into production canonical (one-time)
 - [x] `scripts/historic-fold.R` orchestrator, reusing the `aws()` wrapper pattern and the per-partition loop from `compact.R`. It downloads the 4 originals, normalizes them to `WORK/historic_normalized/`, and uploads that to `s3://…/data/historic/normalized/`. Then, per Parameter, it syncs the canonical partition, runs `compact_run(normalized, canonical_dir=…)`, then `compact_verify(prev_rows = meta rows)`, then syncs back with `--delete` scoped to that partition. Last, it rewrites the meta: `last_merged` is unchanged, and a new `historic_merged` field lists the 4 files and a timestamp
 - [x] (dry run done 2026-09-29, see findings; **publish is post-merge**) Dry run to a local output first. Record per-parameter rows in/out and min Date in findings, then publish. The run must finish well clear of the 1st-of-month cron window. Bucket versioning (#9) makes the rewrite reversible
-- [ ] Verify against S3 anonymously: `query_canonical(parameter = 6, stations = "08EE003")` spans 2016 → 2026-09 with no duplicate keys, and `open_dataset("…/canonical/")` unifies with no errors
+- [ ] (**post-merge**, with the publish) Verify against S3 anonymously: `query_canonical(parameter = 6, stations = "08EE003")` spans 2016 → 2026-09 with no duplicate keys, and `open_dataset("…/canonical/")` unifies with no errors
 
 ## Phase 4: Docs
 - [x] (README.md rendered; **index.html re-render with `update_query = TRUE` is post-publish**, since `data/result.rds` must be rebuilt from the folded store) `README.Rmd`: update the "What's in it" counts and per-parameter start dates, change the layout block so `historic/` reads as originals plus `normalized/`, and add a "Record before 2024-10" subsection covering the Approval `1/2/4` codes, the Symbol vocabulary and missing B/E flags, the historic `harvested_at` meaning, and 20250521's NULL metadata. Then render `README.md` and `index.html`
@@ -40,12 +40,12 @@ Review-driven additions (review-plan.md, review-round1..4.md), all landed:
 Also: `snapshot.yml` runtime comment; `CLAUDE.md` layout/known-state; `scripts/functions.R` top-level debug read guarded with `if (FALSE)` (it read a machine-local CSV at source time, which broke the render on any machine without it).
 
 ## Phase 5: Issue bodies
-- [ ] Edit the #19 body: rewrite "Done when" for the fold-in, correct the Symbol/B-flag claim, and link the research file
-- [ ] Post a pointer comment on wet#25: B/E flags exist nowhere, only ECCC `ICE` covers 2015-12→2022-12, and the pre-2024-10 record is now served by `query_canonical()`
+- [x] Edit the #19 body: rewrite "Done when" for the fold-in, correct the Symbol/B-flag claim, and link the research file
+- [x] Post a pointer comment on wet#25: B/E flags exist nowhere, only ECCC `ICE` covers 2015-12→2022-12, and the pre-2024-10 record is now served by `query_canonical()`
 
 ## Validation
 
-- [ ] Tests pass (`historic-test.R`, `compact-test.R`, `snapshot-test.R`)
-- [ ] `/code-check` clean on each commit
-- [ ] PWF checkboxes match landed work
+- [x] Tests pass (`historic-test.R`, `compact-test.R`, `snapshot-test.R`)
+- [x] `/code-check` clean on each commit
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
