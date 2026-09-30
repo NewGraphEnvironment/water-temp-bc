@@ -1,0 +1,62 @@
+[1] 0
+[1] 0
+store:      s3://water-temp-bc/data/canonical
+normalized: s3://water-temp-bc/data/historic/normalized
+
+== rows and keys per parameter
+  p      rows      keys      first       last
+  1    463749    463749 2022-06-17 2024-01-19
+  5  17292881  17292881 2002-04-30 2026-09-13
+  6    571092    571092 2015-12-31 2026-09-12
+ 18    301487    301487 2022-06-17 2024-01-19
+ 46 101763401 101763401 2022-06-17 2026-09-13
+ 47  91806298  91806298 2022-06-17 2026-09-13
+  PASS: no duplicate (STATION_NUMBER, Parameter, Date)
+  PASS: earliest Date is 2002-04-30 (ECCC water temperature)
+
+== historic keys present in the store
+  PASS: every normalized historic key is in the store
+
+== canonical rows kept, and canonical won every overlap
+  PASS: pre-fold row counts available (non-empty, numeric)
+  p from_snapshots   before
+  1              0        0
+  5        4996180  4996180
+  6         173677   173677
+ 18              0        0
+ 46       55849790 55849790
+ 47       49803864 49803864
+  PASS: rows from snapshots == pre-fold canonical rows, every parameter (store at the fold's watermark)
+  PASS: every pre-fold parameter still present
+
+== vocabularies
+  PASS: ICE rows (807) == distinct eccc ICE keys (807)
+  PASS: no Grade -1
+  PASS: no NULL Unit
+  PASS: no NULL Date
+               Approval         n
+ Provisional/Provisoire 112610436
+          Final/Finales  82390927
+                      1   9442016
+                   <NA>   7714362
+                      4     41057
+                      2       110
+
+== daily discharge: one row per station per UTC date
+  PASS: p6 station-days with more than one row: 0
+
+== schema and arrow read-back
+  PASS: one schema across 152 files
+  PASS: p1: arrow collects a row, Date tz UTC
+  PASS: p5: arrow collects a row, Date tz UTC
+  PASS: p6: arrow collects a row, Date tz UTC
+  PASS: p18: arrow collects a row, Date tz UTC
+  PASS: p46: arrow collects a row, Date tz UTC
+  PASS: p47: arrow collects a row, Date tz UTC
+
+== canonical_meta.json
+  PASS: rows per parameter == meta$rows
+  PASS: meta records the historic fold
+  folded_at: 2026-09-30T16:58:33Z 
+
+ALL CHECKS PASSED — 0 failure(s)
