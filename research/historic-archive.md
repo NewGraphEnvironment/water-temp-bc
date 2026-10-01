@@ -1,6 +1,6 @@
 # The pre-2024-10 historic archive
 
-**Verified:** 2026-09-29 · **Issues:** #19 (fold into canonical), #17 (where the files came from), NewGraphEnvironment/wet#25 (consumer) · **Produced by:** duckdb/httpfs scans of `s3://water-temp-bc/data/historic/*.parquet` and `canonical/`, plus `scripts/historic-fold.R` and `scripts/historic-fold-check.R` (logs: `data-raw/logs/historic_fold/`)
+**Verified:** 2026-09-30 · **Issues:** #19 (fold into canonical), #17 (where the files came from), NewGraphEnvironment/wet#25 (consumer) · **Produced by:** duckdb/httpfs scans of `s3://water-temp-bc/data/historic/*.parquet` and `canonical/`, plus `scripts/historic-fold.R` and `scripts/historic-fold-check.R` (logs: `data-raw/logs/historic_fold/`)
 
 Four parquet files from before the modernization live under `data/historic/`. They are frozen: #19 normalized copies of them (`data/historic/normalized/`) and merged those copies into `canonical/`, so `query_canonical()` now serves them. The originals are never rewritten.
 
@@ -45,7 +45,7 @@ One consequence: where 20250521 genuinely revised a value, its row wins in full,
 
 ## After the fold
 
-Dry run 2026-09-29 (`scripts/historic-fold.R`): canonical goes from 110,823,511 to 212,198,908 rows. p5 starts 2002-04-30 (17.3M rows, 306 stations), p6 starts 2015-12-31 (571K, 264), p46/p47 start 2022-06-17 (101.8M / 91.8M), and p1/p18 (air temperature, precipitation) are frozen at 2022-06-17 → 2024-01-19. Rows written equal an independent distinct-key count over the inputs for every parameter.
+Published 2026-09-30 (`data-raw/logs/historic_fold/20260930_publish.log`), with the same counts as the 2026-09-29 dry runs: canonical went from 110,823,511 to 212,198,908 rows. `scripts/historic-fold-check.R` passes on live S3, with snapshot-harvested rows exactly equal to the pre-fold counts. A `compact_only` runner pass (run 36753933165) took 8 min 11 s against the folded store and left every count unchanged. p5 starts 2002-04-30 (17.3M rows, 306 stations), p6 starts 2015-12-31 (571K, 264), p46/p47 start 2022-06-17 (101.8M / 91.8M), and p1/p18 (air temperature, precipitation) are frozen at 2022-06-17 → 2024-01-19. Rows written equal an independent distinct-key count over the inputs for every parameter.
 
 ## Vocabulary differs from the realtime feed
 
