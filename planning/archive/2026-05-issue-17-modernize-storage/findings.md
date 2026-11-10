@@ -75,7 +75,7 @@ Builds `stations_realtime.parquet` (metadata, not data). Stays as its own manual
 
 ## Cross-repo dependency
 
-- **`NewGraphEnvironment/rtj#147`** — proposes `modules/gha_s3_role/` Terraform module; first consumer is `water-temp-bc`. Blocks Phase 4 only. Phases 1–3 are local + S3-write-with-existing-keys and can proceed in parallel.
+- **an internal issue** — proposes `modules/gha_s3_role/` Terraform module; first consumer is `water-temp-bc`. Blocks Phase 4 only. Phases 1–3 are local + S3-write-with-existing-keys and can proceed in parallel.
 
 ## Phase 2 discoveries (2026-05-14)
 

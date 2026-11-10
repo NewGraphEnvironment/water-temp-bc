@@ -6,7 +6,7 @@ Latest reading on the cloud right now is **2025-07-28 07:00** → gap of ~9.5 mo
 
 ## Phase 0 — Auth unblocker (blocks Phase 4 only)
 
-- [ ] Track `NewGraphEnvironment/rtj#147`. When merged + `terraform apply`-ed, capture the role ARN into Phase 4's workflow.
+- [ ] Track an internal issue. When merged + `terraform apply`-ed, capture the role ARN into Phase 4's workflow.
 
 ## Phase 1 — Write side ✅
 

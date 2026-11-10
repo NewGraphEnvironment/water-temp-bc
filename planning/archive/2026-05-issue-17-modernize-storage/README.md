@@ -11,5 +11,5 @@ Three things worth remembering for other repos:
 Closed by: PR NewGraphEnvironment/water-temp-bc#18 (squash commit 840b84f).
 
 Cross-references:
-- NewGraphEnvironment/rtj#147 — provisioned `modules/gha_s3_role/` Terraform module + `role_gha_water_temp_bc` IAM role (Phase 0 blocker).
+- An internal issue — provisioned `modules/gha_s3_role/` Terraform module + `role_gha_water_temp_bc` IAM role (Phase 0 blocker).
 - Outstanding follow-ups: historic schema normalization (body drafted at `/tmp/historic-normalize-issue.md`); incidental `data/water-temp-bc.duckdb` left in S3 from a past sync.

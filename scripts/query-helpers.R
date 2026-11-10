@@ -30,7 +30,7 @@ suppressPackageStartupMessages({
 # Open a dataset with explicit S3 timeouts. The default S3 client retries a
 # transient DNS/network failure with long backoff (observed: 8.7 min before
 # erroring); these bounds make it fail in seconds instead. anonymous = TRUE:
-# the bucket policy grants public GetObject + ListBucket (rtj#187), so no
+# the bucket policy grants public GetObject + ListBucket, so no
 # one needs AWS credentials — and expired/misconfigured local credentials
 # can't break reads either.
 open_dataset_canonical <- function(dataset_root) {

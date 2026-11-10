@@ -6,4 +6,4 @@ The hard-won learnings (details in findings.md): duckdb's window operator OOMs u
 
 Closed by: PR #24 (merge b26abfe) + runner-OOM fix PR #25 (deb9296); canonical bootstrapped to S3 2026-07-18 and production-verified via compact_only dispatch run 29675504715 (2026-07-19, golden 98,726,492).
 
-Follow-ups all resolved same-day: rtj#187 (lifecycle + ListBucket) applied -> helper flipped to anonymous=TRUE; rtj#147 reopened+applied (allow_delete for sync --delete); shard_rows 10M->6M after runner OOM (PR #25). Historic schema normalization remains #19.
+Follow-ups all resolved same-day: an internal issue (lifecycle + ListBucket) applied -> helper flipped to anonymous=TRUE; an internal issue reopened+applied (allow_delete for sync --delete); shard_rows 10M->6M after runner OOM (PR #25). Historic schema normalization remains #19.
